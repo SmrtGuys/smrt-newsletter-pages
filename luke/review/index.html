@@ -166,7 +166,8 @@
   function api(action, body){
     var opts = { method: body ? "POST" : "GET", headers: {} };
     if(body){ opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
-    return fetch(SUPA + "/newsletter-approval?action=" + action, opts).then(function(r){ return r.json(); });
+    var u = SUPA + "/newsletter-approval?action=" + action + "&token=" + encodeURIComponent(token);
+    return fetch(u, opts).then(function(r){ return r.json(); });
   }
 
   if(!token){ showError("This link is missing its approval code. Please use the link from your text."); return; }

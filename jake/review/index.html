@@ -53,6 +53,8 @@
   .approve:hover{box-shadow:0 6px 18px rgba(7,59,112,.28);}
   .revise{background:var(--white);color:var(--ink);border-color:var(--border);flex:0 0 auto;padding-left:20px;padding-right:20px;}
   .revise:hover{border-color:#cdc8c0;}
+  .hold{background:var(--white);color:var(--red);border-color:#f3d9c9;flex:0 0 auto;padding-left:16px;padding-right:16px;}
+  .hold:hover{border-color:#e9c3ad;background:#fffaf7;}
   button:active{transform:translateY(1px) scale(.99);}
   button:disabled{opacity:.55;cursor:default;transform:none;box-shadow:none;}
   /* revision sheet */
@@ -79,6 +81,7 @@
   .result .icon{width:46px;height:46px;border-radius:50%;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;font-size:24px;}
   .result.approved .icon{background:#eaf4ee;color:var(--green);}
   .result.revised .icon{background:#fdeee6;color:var(--red);}
+  .result.held .icon{background:#fdeee6;color:var(--red);}
   .result h2{font-size:18px;font-weight:700;margin:0 0 6px;}
   .result p{font-size:14px;color:var(--muted);margin:0;line-height:1.55;}
   .hide{display:none !important;}
@@ -117,7 +120,8 @@
   <!-- sticky actions -->
   <div id="bar" class="bar hide">
     <div class="bar-inner">
-      <button class="revise" id="reviseBtn" type="button">✍️ Needs revision</button>
+      <button class="revise" id="reviseBtn" type="button">✍️ Revise</button>
+      <button class="hold" id="holdBtn" type="button">⏸️ Hold</button>
       <button class="approve" id="approveBtn" type="button">✓ Approve &amp; send</button>
     </div>
   </div>
@@ -144,7 +148,7 @@
   }
   function showResult(kind, title, body){
     bar.classList.add("hide"); sheet.classList.add("hide");
-    var icon = kind === "approved" ? "✓" : "✍️";
+    var icon = kind === "approved" ? "✓" : (kind === "held" ? "⏸️" : "✍️");
     stage.innerHTML = '<div class="result ' + kind + '"><div class="icon">' + icon + '</div>' +
       '<h2>' + title + '</h2><p>' + body + '</p></div>';
   }
@@ -160,6 +164,7 @@
     var pill = el("statuspill");
     if(st === "approved"){ pill.textContent = "Approved — sends Tuesday"; pill.className = "pill ok"; }
     else if(st === "revision_requested"){ pill.textContent = "Revision in progress"; pill.className = "pill"; }
+    else if(st === "rejected"){ pill.textContent = "Held — won't send this week"; pill.className = "pill"; }
     else { pill.textContent = "Awaiting your approval"; pill.className = "pill"; }
   }
 
@@ -185,6 +190,14 @@
       showResult("revised", "Revision requested", "SMRT is rewriting this newsletter now. You'll get a fresh draft to review shortly — nothing sends until you approve it.");
       return;
     }
+    if(d.approval_status === "rejected"){
+      showResult("held", "Held — not sending", "This week's newsletter won't go out. Nothing sends unless you approve it. Changed your mind? You can still send it below.");
+      bar.classList.remove("hide");
+      el("reviseBtn").classList.add("hide");
+      el("holdBtn").classList.add("hide");
+      el("approveBtn").textContent = "✓ Send it after all";
+      return;
+    }
     // pending_approval OR approved: show actions (approved can still be changed)
     bar.classList.remove("hide");
     if(d.approval_status === "approved"){
@@ -204,6 +217,16 @@
         showResult("approved", "Approved 🎉", "This newsletter is locked in and will go out Tuesday morning. Thanks for the quick look.");
       } else { b.disabled = false; b.textContent = "✓ Approve & send"; alert("Couldn't approve — please try again."); }
     }).catch(function(){ b.disabled = false; b.textContent = "✓ Approve & send"; });
+  });
+
+  // 2b) Hold — don't send this week
+  el("holdBtn").addEventListener("click", function(){
+    var b = this; b.disabled = true; b.textContent = "Holding…";
+    api("reject", withToken({})).then(function(d){
+      if(d && d.ok){
+        showResult("held", "Held — not sending", "This week's newsletter won't go out. Nothing sends unless you approve it. You can change your mind anytime from this link.");
+      } else { b.disabled = false; b.textContent = "⏸️ Hold"; alert("Couldn't hold — please try again."); }
+    }).catch(function(){ b.disabled = false; b.textContent = "⏸️ Hold"; });
   });
 
   // 3) Needs revision -> reveal sheet

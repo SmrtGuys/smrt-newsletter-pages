@@ -36,7 +36,7 @@
     background:var(--white);border:1px solid var(--border);border-radius:14px;
     padding:0;min-height:120px;overflow:hidden;
   }
-  .draft iframe{display:block;width:100%;border:0;min-height:480px;background:#fff;}
+  .draft iframe{display:block;width:100%;border:0;background:#fff;}
   .note{font-size:13px;color:var(--muted);text-align:center;margin:14px 0 0;line-height:1.5;}
   .loading{color:var(--muted);text-align:center;padding:52px 0;font-size:14px;}
   /* sticky action bar */
@@ -166,15 +166,28 @@
     frame.setAttribute("sandbox", "allow-same-origin allow-popups allow-popups-to-escape-sandbox");
     frame.setAttribute("title", "This week's newsletter");
     frame.srcdoc = html;
+    var box = document.createElement("div"); box.className = "draft";
     frame.addEventListener("load", function(){
       try {
         var doc = frame.contentDocument;
-        var fit = function(){ frame.style.height = Math.max(480, doc.documentElement.scrollHeight) + "px"; };
-        fit(); setTimeout(fit, 300); setTimeout(fit, 1200);
         Array.prototype.forEach.call(doc.querySelectorAll("a[href]"), function(a){ a.setAttribute("target", "_blank"); a.setAttribute("rel", "noopener"); });
+        // Fit to width the way a mail app does: lay the email out at its own width, then scale it down to the card.
+        var fit = function(){
+          frame.style.transform = "none"; frame.style.width = "100%";
+          var avail = box.clientWidth;
+          var natural = Math.max(doc.documentElement.scrollWidth, doc.body ? doc.body.scrollWidth : 0);
+          var scale = natural > avail ? avail / natural : 1;
+          frame.style.width = (scale < 1 ? natural : avail) + "px";
+          var h = Math.max(doc.documentElement.scrollHeight, doc.body ? doc.body.scrollHeight : 0);
+          frame.style.height = h + "px";
+          frame.style.transformOrigin = "0 0";
+          frame.style.transform = scale < 1 ? "scale(" + scale + ")" : "none";
+          box.style.height = Math.ceil(h * scale) + "px";
+        };
+        fit(); setTimeout(fit, 300); setTimeout(fit, 1200);
+        window.addEventListener("resize", fit);
       } catch(e) {}
     });
-    var box = document.createElement("div"); box.className = "draft";
     box.appendChild(frame);
     stage.innerHTML = ""; stage.appendChild(box);
   }

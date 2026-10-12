@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Unsubscribe</title>
+<style>
+  body{margin:0;padding:40px 20px;background:#faf9f8;font-family:Inter,-apple-system,'Segoe UI',Arial,sans-serif;color:#1e2a3a;}
+  .card{max-width:420px;margin:0 auto;background:#ffffff;border:1px solid #e8e5e0;border-radius:12px;padding:28px 24px;}
+  h1{font-size:18px;margin:0 0 12px;}
+  p{font-size:14px;line-height:1.6;color:#4a5568;margin:0 0 18px;}
+  button{background:#073b70;color:#ffffff;border:none;border-radius:8px;padding:11px 22px;font-size:14px;font-weight:600;cursor:pointer;}
+  button:disabled{opacity:.6;cursor:default;}
+  .hide{display:none;}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1 id="title">Stop the weekly market update?</h1>
+    <p id="body">Click below and we will stop sending these emails to this address right away.</p>
+    <button id="go" type="button">Unsubscribe</button>
+  </div>
+<script>
+(function(){
+  var FN = "https://fhxnzsqxbfclerivryrt.supabase.co/functions/v1/newsletter-unsubscribe";
+  var token = (new URLSearchParams(location.search).get("t") || "").trim();
+  var title = document.getElementById("title"), body = document.getElementById("body"), go = document.getElementById("go");
+  function done(t, b){ title.textContent = t; body.textContent = b; go.classList.add("hide"); }
+  if(!token){ done("This link isn't valid", "This unsubscribe link is missing its code. No changes were made."); return; }
+  // Nothing happens on load: mail scanners open links, so only the button unsubscribes.
+  go.addEventListener("click", function(){
+    go.disabled = true; go.textContent = "Unsubscribing...";
+    fetch(FN + "?t=" + encodeURIComponent(token), {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "List-Unsubscribe=One-Click"
+    }).then(function(r){
+      if(r.ok) done("You're unsubscribed", "You won't get these emails anymore.");
+      else if(r.status === 400) done("This link isn't valid", "This unsubscribe link has expired or isn't recognized. No changes were made.");
+      else { go.disabled = false; go.textContent = "Unsubscribe"; body.textContent = "Something went wrong. Please try again."; }
+    }).catch(function(){ go.disabled = false; go.textContent = "Unsubscribe"; body.textContent = "Something went wrong. Please try again."; });
+  });
+})();
+</script>
+</body>
+</html>

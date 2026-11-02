@@ -87,6 +87,56 @@
   .result.held .icon{background:#fdeee6;color:var(--red);}
   .result h2{font-size:18px;font-weight:700;margin:0 0 6px;}
   .result p{font-size:14px;color:var(--muted);margin:0;line-height:1.55;}
+  /* FEA-MVZP96SV: the week's Instagram slides, with their own approval. Shown exactly as they post: no crop, no filter, no overlay. */
+  .slides{margin:26px 0 0;}
+  .slides h2{font-size:19px;font-weight:700;line-height:1.3;margin:0 0 4px;letter-spacing:-.01em;}
+  .slides .sub{font-size:13px;color:var(--muted);margin:0 0 14px;line-height:1.5;}
+  .carousel{position:relative;max-width:440px;margin:0 auto;}
+  .carousel:focus-visible{outline:2px solid var(--navy);outline-offset:4px;}
+  .track{
+    display:flex;gap:12px;overflow-x:auto;overscroll-behavior-x:contain;
+    scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+  }
+  .track::-webkit-scrollbar{display:none;}
+  .slide{flex:0 0 100%;margin:0;scroll-snap-align:center;scroll-snap-stop:always;}
+  .slide img{display:block;width:100%;height:auto;aspect-ratio:4/5;background:#ece9e4;border:1px solid var(--border);}
+  .nav{
+    display:none;position:absolute;top:50%;width:40px;height:40px;margin-top:-20px;padding:0;flex:none;
+    border-radius:50%;border:1px solid var(--border);background:var(--white);color:var(--ink);font-size:20px;line-height:1;
+    box-shadow:0 2px 8px rgba(30,42,58,.12);
+  }
+  .nav.prev{left:-56px;} .nav.next{right:-56px;}
+  .nav:disabled{opacity:.3;box-shadow:none;}
+  @media (hover:hover) and (pointer:fine) and (min-width:600px){ .nav{display:block;} }
+  .dots{display:flex;justify-content:center;gap:0;margin:8px 0 0;}
+  .dot{
+    flex:none;width:28px;height:28px;padding:0;border:0;border-radius:50%;background:transparent;position:relative;
+  }
+  .dot::before{
+    content:"";position:absolute;left:50%;top:50%;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;
+    background:#c9c4bb;transition:background .15s ease, transform .15s ease;
+  }
+  .dot[aria-current="true"]::before{background:var(--navy);transform:scale(1.35);}
+  .count{font-size:12px;font-weight:600;color:var(--muted);text-align:center;margin:2px 0 0;letter-spacing:.04em;}
+  .fullsize{display:block;text-align:center;font-size:13px;margin:8px 0 0;color:var(--navy);}
+  .caption-card{
+    background:var(--white);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin:16px auto 0;max-width:440px;
+  }
+  .caption-card h3{font-size:10px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:var(--navy);margin:0 0 8px;}
+  .caption-card p{font-size:14px;line-height:1.55;margin:0;white-space:pre-wrap;overflow-wrap:anywhere;}
+  .slides-action{max-width:440px;margin:16px auto 0;}
+  .slides-action button{width:100%;flex:none;}
+  .slides-status{
+    font-size:14px;line-height:1.55;margin:0;padding:16px 18px;border-radius:14px;text-align:center;
+    background:#eaf4ee;color:var(--green);border:1px solid #c9e3d3;font-weight:600;
+  }
+  .slides-status.warn{background:#fff7ed;color:var(--red);border-color:#f3d9c9;}
+  .slides-msg{font-size:13px;color:var(--muted);text-align:center;margin:10px 0 0;line-height:1.5;min-height:1em;}
+  a.pill.jump{text-decoration:none;}
+  #statuspill{margin-right:6px;}
+  .bar{transition:transform .2s ease;}
+  .bar.away{transform:translateY(110%);pointer-events:none;}
+  @media (max-width:420px){ .wrap{padding-left:16px;padding-right:16px;} }
   .hide{display:none !important;}
   @keyframes rise{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
   @media(prefers-reduced-motion:reduce){
@@ -102,12 +152,33 @@
       <h1 id="subject">Weekly Market Update</h1>
       <div class="meta" id="weekmeta"></div>
       <span id="statuspill" class="pill">Waiting on your sign-off</span>
+      <a id="slidesJump" class="pill jump hide" href="#slides">Instagram slides ready</a>
     </div>
 
     <div id="stage">
       <div class="draft"><div class="loading">Loading this week's issue&hellip;</div></div>
     </div>
     <p id="note" class="note hide">This is the email exactly as it goes out. Want changes? Reply to the text with what you'd change.</p>
+
+    <section id="slides" class="slides hide" aria-labelledby="slidesTitle">
+      <p class="eyebrow">SMRT &middot; Instagram slides</p>
+      <h2 id="slidesTitle">This week's Instagram slides</h2>
+      <p class="sub">Swipe through them. This is exactly what posts, source notice and all. Approving the slides is separate from the newsletter above.</p>
+      <div id="carousel" class="carousel" role="region" aria-roledescription="carousel" aria-label="Instagram slides" tabindex="0">
+        <div id="track" class="track"></div>
+        <button id="prevBtn" class="nav prev" type="button" aria-label="Previous slide">&#8249;</button>
+        <button id="nextBtn" class="nav next" type="button" aria-label="Next slide">&#8250;</button>
+      </div>
+      <div id="dots" class="dots"></div>
+      <p id="count" class="count" aria-live="polite"></p>
+      <a id="fullsize" class="fullsize" target="_blank" rel="noopener">Open this slide full size</a>
+      <div class="caption-card"><h3>Caption</h3><p id="captionText"></p></div>
+      <div class="slides-action">
+        <button id="approveSlidesBtn" class="approve" type="button" disabled>&#10003; Approve slides</button>
+        <div id="slidesStatus" class="slides-status hide" role="status"></div>
+        <p id="slidesMsg" class="slides-msg" role="status"></p>
+      </div>
+    </section>
   </div>
 
   <div id="bar" class="bar hide">
@@ -191,12 +262,136 @@
     box.appendChild(frame);
     stage.innerHTML = ""; stage.appendChild(box);
   }
-  function act(action){
-    var approve = el("approveBtn"), hold = el("holdBtn");
-    approve.disabled = true; hold.disabled = true;
+  function post(action){
     return fetch(FN, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t: token, action: action }) })
       .then(function(r){ return r.json().then(function(d){ return { status: r.status, d: d }; }); });
   }
+  function act(action){
+    var approve = el("approveBtn"), hold = el("holdBtn");
+    approve.disabled = true; hold.disabled = true;
+    return post(action);
+  }
+
+  // ---- FEA-MVZP96SV: the Instagram slides. Their own decision: nothing here reads or changes the newsletter's state. ----
+  var slidesEl = el("slides"), track = el("track"), dotsEl = el("dots"), countEl = el("count"), prevBtn = el("prevBtn"), nextBtn = el("nextBtn");
+  var carousel = el("carousel"), fullLink = el("fullsize"), approveSlides = el("approveSlidesBtn"), slidesStatus = el("slidesStatus"), slidesMsg = el("slidesMsg");
+  var slideCount = 0, current = 0, slideUrls = [], rafPending = false;
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function when(iso){
+    var d = new Date(iso); if(isNaN(d.getTime())) return "";
+    var time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    var now = new Date();
+    if(d.toDateString() === now.toDateString()) return time;
+    var day = d.toLocaleDateString([], { weekday: "long" });
+    return day + " at " + time;
+  }
+  // What the owner is told about posting, from the server's own word for it. Dry runs never promise a time.
+  function postingText(s){
+    switch(s && s.posting){
+      case "scheduled": return { text: s.scheduled_for ? "Slides approved. They go up on Instagram at " + when(s.scheduled_for) + "." : "Slides approved. They're lined up to go up on Instagram.", warn: false };
+      case "waiting": return { text: "Slides approved. Getting them ready to post.", warn: false };
+      case "not_live": return { text: "Slides approved. Posting to Instagram isn't switched on for your account yet, so nothing goes up for now.", warn: true };
+      case "skipped":
+        if(s.reason === "switch_off") return { text: "Slides approved, but posting to Instagram is switched off for your account, so they won't go up.", warn: true };
+        if(s.reason === "no_connection" || s.reason === "connection_expired") return { text: "Slides approved, but Instagram isn't connected right now, so they won't go up.", warn: true };
+        if(s.reason === "too_old") return { text: "Slides approved, but too much time went by to post them.", warn: true };
+        if(s.reason && s.reason.indexOf("identity_") === 0) return { text: "Slides approved, but posting isn't set up for your Instagram account yet, so they won't go up.", warn: true };
+        return { text: "Slides approved, but they didn't go up.", warn: true };
+      case "problem": return { text: "Slides approved. Something held up the posting and we're looking into it.", warn: true };
+      default: return { text: "Slides approved.", warn: false };
+    }
+  }
+  function showApproved(s){
+    var t = postingText(s);
+    approveSlides.classList.add("hide");
+    slidesStatus.textContent = t.text;
+    slidesStatus.className = "slides-status" + (t.warn ? " warn" : "");
+    slidesMsg.textContent = "";
+    var jump = el("slidesJump"); jump.textContent = "Slides approved"; jump.className = "pill ok jump";
+  }
+  function step(){
+    return track.children.length > 1 ? track.children[1].offsetLeft - track.children[0].offsetLeft : track.clientWidth;
+  }
+  function setCurrent(i){
+    if(i < 0) i = 0; if(i > slideCount - 1) i = slideCount - 1;
+    current = i;
+    Array.prototype.forEach.call(dotsEl.children, function(b, k){ if(k === i) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current"); });
+    countEl.textContent = (i + 1) + " of " + slideCount;
+    fullLink.href = slideUrls[i];
+    prevBtn.disabled = i === 0; nextBtn.disabled = i === slideCount - 1;
+  }
+  function goTo(i){
+    if(i < 0) i = 0; if(i > slideCount - 1) i = slideCount - 1;
+    track.scrollTo({ left: i * step(), behavior: reduceMotion ? "auto" : "smooth" });
+    setCurrent(i);
+  }
+  function onScroll(){
+    if(rafPending) return; rafPending = true;
+    requestAnimationFrame(function(){ rafPending = false; var s = step(); if(s > 0) setCurrent(Math.round(track.scrollLeft / s)); });
+  }
+  function showSlides(d){
+    var s = d.slides;
+    if(!s || !s.slides || s.slides.length < 1){
+      if(d.slides_error){
+        slidesEl.classList.remove("hide");
+        slidesEl.querySelector(".sub").textContent = "This week's Instagram slides couldn't be loaded. Please reload the page in a minute.";
+        ["carousel","dots","count","fullsize"].forEach(function(id){ el(id).classList.add("hide"); });
+        document.querySelector(".caption-card").classList.add("hide");
+        document.querySelector(".slides-action").classList.add("hide");
+      }
+      return;
+    }
+    slideCount = s.slides.length; slideUrls = s.slides.map(function(x){ return x.url; });
+    track.textContent = ""; dotsEl.textContent = "";
+    var loaded = 0, broken = false;
+    s.slides.forEach(function(x, i){
+      var fig = document.createElement("figure"); fig.className = "slide";
+      fig.setAttribute("role", "group"); fig.setAttribute("aria-roledescription", "slide"); fig.setAttribute("aria-label", (i + 1) + " of " + slideCount);
+      var img = document.createElement("img"); img.alt = x.alt || ("Slide " + (i + 1)); img.decoding = "async"; img.draggable = false;
+      var ready = function(){ loaded++; if(loaded === slideCount && !broken && s.can_approve) approveSlides.disabled = false; };
+      img.addEventListener("load", ready);
+      img.addEventListener("error", function(){ broken = true; slidesMsg.textContent = "A slide didn't load. Please reload the page before approving."; approveSlides.disabled = true; });
+      img.src = x.url;
+      fig.appendChild(img); track.appendChild(fig);
+      var b = document.createElement("button"); b.type = "button"; b.className = "dot"; b.setAttribute("aria-label", "Go to slide " + (i + 1) + " of " + slideCount);
+      b.addEventListener("click", function(){ goTo(i); });
+      dotsEl.appendChild(b);
+    });
+    el("captionText").textContent = s.caption || "";
+    slidesEl.classList.remove("hide");
+    var jump = el("slidesJump"); jump.classList.remove("hide");
+    setCurrent(0);
+    if(s.status === "approved"){ showApproved(s); }
+    else if(!s.can_approve){ approveSlides.classList.add("hide"); slidesMsg.textContent = "These slides can't be approved right now."; }
+    // The newsletter's own buttons step aside while the slides are in view, so the two approvals are never mistaken for each other.
+    if("IntersectionObserver" in window){
+      new IntersectionObserver(function(entries){
+        entries.forEach(function(e){ bar.classList.toggle("away", e.isIntersecting); });
+      }, { threshold: 0.35 }).observe(slidesEl);
+    }
+  }
+  track.addEventListener("scroll", onScroll, { passive: true });
+  prevBtn.addEventListener("click", function(){ goTo(current - 1); });
+  nextBtn.addEventListener("click", function(){ goTo(current + 1); });
+  carousel.addEventListener("keydown", function(e){
+    if(e.key === "ArrowLeft"){ e.preventDefault(); goTo(current - 1); }
+    else if(e.key === "ArrowRight"){ e.preventDefault(); goTo(current + 1); }
+    else if(e.key === "Home"){ e.preventDefault(); goTo(0); }
+    else if(e.key === "End"){ e.preventDefault(); goTo(slideCount - 1); }
+  });
+  window.addEventListener("resize", function(){ if(slideCount) track.scrollTo({ left: current * step(), behavior: "auto" }); });
+  approveSlides.addEventListener("click", function(){
+    var b = this; b.disabled = true; b.textContent = "Approving\u2026"; slidesMsg.textContent = "";
+    post("approve_slides").then(function(res){
+      if(res.d && res.d.ok && res.d.slides){ showApproved(res.d.slides); return; }
+      b.textContent = "\u2713 Approve slides";
+      var why = res.d && res.d.error;
+      if(res.status === 410) slidesMsg.textContent = "This link has expired.";
+      else if(why === "not_eligible") { b.disabled = true; slidesMsg.textContent = "These slides can't be approved right now. Instagram posting is off for your account or Instagram isn't connected."; }
+      else { b.disabled = false; slidesMsg.textContent = "Couldn't approve the slides. Please try again."; }
+    }).catch(function(){ b.disabled = false; b.textContent = "\u2713 Approve slides"; slidesMsg.textContent = "Couldn't approve the slides. Please try again."; });
+  });
 
   if(!/^[0-9a-f]{64}$/.test(token)){ message("This link is missing its code. Please use the link from your text."); return; }
 
@@ -209,6 +404,7 @@
     el("subject").textContent = d.subject_line || "Weekly Market Update";
     el("weekmeta").textContent = weekLabel(d.week_start_date);
     banner.classList.remove("hide");
+    showSlides(d); // the slides never wait on, or follow, the newsletter's state
     if(d.revision_in_progress){ message("A revision is in progress. You'll get a fresh link to sign off once it's ready."); return; }
     if(!d.html){ message("The preview couldn't be built (" + (d.render_error || "unknown") + "). Nothing will send until it's fixed."); return; }
     showEmail(d.html);

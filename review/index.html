@@ -302,7 +302,24 @@
       default: return { text: "Slides approved.", warn: false };
     }
   }
+  // The hand-off may still be running when the owner taps (or the page loads): check back a few times, then stop.
+  var watching = false;
+  function watchPosting(s){
+    if(watching || !s || s.posting !== "waiting") return;
+    watching = true;
+    var delays = [6000, 15000, 40000], i = 0;
+    (function tick(){
+      if(i >= delays.length){ watching = false; return; }
+      setTimeout(function(){
+        fetch(FN + "?t=" + encodeURIComponent(token)).then(function(r){ return r.json(); }).then(function(d){
+          if(d && d.slides && d.slides.status === "approved" && d.slides.posting && d.slides.posting !== "waiting"){ watching = false; showApproved(d.slides); }
+          else { i++; tick(); }
+        }).catch(function(){ i++; tick(); });
+      }, delays[i]);
+    })();
+  }
   function showApproved(s){
+    watchPosting(s);
     var t = postingText(s);
     approveSlides.classList.add("hide");
     slidesStatus.textContent = t.text;

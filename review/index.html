@@ -131,6 +131,7 @@
     background:#eaf4ee;color:var(--green);border:1px solid #c9e3d3;font-weight:600;
   }
   .slides-status.warn{background:#fff7ed;color:var(--red);border-color:#f3d9c9;}
+  .posts-at{font-size:14px;color:var(--ink);text-align:center;margin:0 0 12px;line-height:1.5;}
   .slides-msg{font-size:13px;color:var(--muted);text-align:center;margin:10px 0 0;line-height:1.5;min-height:1em;}
   a.pill.jump{text-decoration:none;}
   #statuspill{margin-right:6px;}
@@ -174,6 +175,7 @@
       <a id="fullsize" class="fullsize" target="_blank" rel="noopener">Open this slide full size</a>
       <div class="caption-card"><h3>Caption</h3><p id="captionText"></p></div>
       <div class="slides-action">
+        <p id="postsAt" class="posts-at hide"></p>
         <button id="approveSlidesBtn" class="approve" type="button" disabled>&#10003; Approve slides</button>
         <div id="slidesStatus" class="slides-status hide" role="status"></div>
         <p id="slidesMsg" class="slides-msg" role="status"></p>
@@ -278,18 +280,17 @@
   var slideCount = 0, current = 0, slideUrls = [], rafPending = false;
   var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  function when(iso){
+  // "today at 9:00 AM" or "on Wednesday at 9:00 AM", in the reader's own clock; "" when the time cannot be read.
+  function onWhen(iso){
     var d = new Date(iso); if(isNaN(d.getTime())) return "";
     var time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    var now = new Date();
-    if(d.toDateString() === now.toDateString()) return time;
-    var day = d.toLocaleDateString([], { weekday: "long" });
-    return day + " at " + time;
+    if(d.toDateString() === new Date().toDateString()) return "today at " + time;
+    return "on " + d.toLocaleDateString([], { weekday: "long" }) + " at " + time;
   }
   // What the owner is told about posting, from the server's own word for it. Dry runs never promise a time.
   function postingText(s){
     switch(s && s.posting){
-      case "scheduled": return { text: s.scheduled_for ? "Slides approved. They go up on Instagram at " + when(s.scheduled_for) + "." : "Slides approved. They're lined up to go up on Instagram.", warn: false };
+      case "scheduled": return { text: onWhen(s.scheduled_for) ? "Slides approved. They go up on Instagram " + onWhen(s.scheduled_for) + "." : "Slides approved. They're lined up to go up on Instagram.", warn: false };
       case "waiting": return { text: "Slides approved. Getting them ready to post.", warn: false };
       case "not_live": return { text: "Slides approved. Posting to Instagram isn't switched on for your account yet, so nothing goes up for now.", warn: true };
       case "skipped":
@@ -322,6 +323,7 @@
     watchPosting(s);
     var t = postingText(s);
     approveSlides.classList.add("hide");
+    el("postsAt").classList.add("hide");
     slidesStatus.textContent = t.text;
     slidesStatus.className = "slides-status" + (t.warn ? " warn" : "");
     slidesMsg.textContent = "";
@@ -381,6 +383,10 @@
     setCurrent(0);
     if(s.status === "approved"){ showApproved(s); }
     else if(!s.can_approve){ approveSlides.classList.add("hide"); slidesMsg.textContent = "These slides can't be approved right now."; }
+    else if(s.post_at && onWhen(s.post_at)){
+      // Said before the tap, from the server's own time (the database decides it), so nobody is surprised by when they go up.
+      var postsAt = el("postsAt"); postsAt.textContent = "Once you approve them, they go up on Instagram " + onWhen(s.post_at) + "."; postsAt.classList.remove("hide");
+    }
     // The newsletter's own buttons step aside while the slides are in view, so the two approvals are never mistaken for each other.
     if("IntersectionObserver" in window){
       new IntersectionObserver(function(entries){

@@ -291,6 +291,9 @@
   function postingText(s){
     switch(s && s.posting){
       case "scheduled": return { text: onWhen(s.scheduled_for) ? "Slides approved. They go up on Instagram " + onWhen(s.scheduled_for) + "." : "Slides approved. They're lined up to go up on Instagram.", warn: false };
+      // Approved, and waiting for the newsletter to go out first (the slides follow the email); the time is the database's own.
+      case "planned": return { text: onWhen(s.post_at) ? "Slides approved. They go up on Instagram " + onWhen(s.post_at) + "." : "Slides approved. They're lined up to go up on Instagram.", warn: false };
+      case "held": return { text: "Slides approved. Your newsletter is on hold, so they're on hold too. They go up on Instagram after the newsletter goes out.", warn: false };
       case "waiting": return { text: "Slides approved. Getting them ready to post.", warn: false };
       case "not_live": return { text: "Slides approved. Posting to Instagram isn't switched on for your account yet, so nothing goes up for now.", warn: true };
       case "skipped":
@@ -302,6 +305,24 @@
       case "problem": return { text: "Slides approved. Something held up the posting and we're looking into it.", warn: true };
       default: return { text: "Slides approved.", warn: false };
     }
+  }
+  // What is said under the slides before the tap: when they go up (the database's own time), or that the newsletter is on hold. "" = nothing to say.
+  function beforeTapText(s){
+    if(s.newsletter_held) return "Your newsletter is on hold, so these slides are on hold too. Once you approve them, they go up on Instagram after the newsletter goes out.";
+    if(s.post_at && onWhen(s.post_at)) return "Once you approve them, they go up on Instagram " + onWhen(s.post_at) + ".";
+    return "";
+  }
+  function showBeforeTap(s){
+    var t = beforeTapText(s), p = el("postsAt");
+    p.textContent = t; p.classList.toggle("hide", !t);
+  }
+  // The newsletter's own decision (Hold, or Send it after all) changes what the slides will do: ask the server again and say it.
+  function refreshSlides(){
+    fetch(FN + "?t=" + encodeURIComponent(token)).then(function(r){ return r.json(); }).then(function(d){
+      var s = d && d.slides; if(!s || !s.slides) return;
+      if(s.status === "approved"){ showApproved(s); }
+      else if(s.can_approve){ showBeforeTap(s); }
+    }).catch(function(){});
   }
   // The hand-off may still be running when the owner taps (or the page loads): check back a few times, then stop.
   var watching = false;
@@ -383,9 +404,9 @@
     setCurrent(0);
     if(s.status === "approved"){ showApproved(s); }
     else if(!s.can_approve){ approveSlides.classList.add("hide"); slidesMsg.textContent = "These slides can't be approved right now."; }
-    else if(s.post_at && onWhen(s.post_at)){
+    else {
       // Said before the tap, from the server's own time (the database decides it), so nobody is surprised by when they go up.
-      var postsAt = el("postsAt"); postsAt.textContent = "Once you approve them, they go up on Instagram " + onWhen(s.post_at) + "."; postsAt.classList.remove("hide");
+      showBeforeTap(s);
     }
     // The newsletter's own buttons step aside while the slides are in view, so the two approvals are never mistaken for each other.
     if("IntersectionObserver" in window){
@@ -442,6 +463,7 @@
       if(res.d && res.d.ok){
         paint({ signed_off: true });
         result("approved", "Signed off", "It goes out Tuesday at 8:30am. A copy is on its way to your inbox too.");
+        refreshSlides();
       } else {
         paint({}); alert(res.status === 410 ? "This link has expired." : "Couldn't sign off. Please try again.");
       }
@@ -453,6 +475,7 @@
       if(res.d && res.d.ok){
         paint({ held: true });
         result("held", "Held", "Nothing goes out this week. Changed your mind? Tap Send it after all.");
+        refreshSlides();
       } else {
         paint({}); alert(res.status === 410 ? "This link has expired." : "Couldn't hold. Please try again.");
       }

@@ -147,7 +147,7 @@
 </head>
 <body>
   <div class="wrap">
-    <p class="eyebrow">SMRT &middot; Newsletter sign-off</p>
+    <p class="eyebrow" id="eyebrow">SMRT &middot; Newsletter sign-off</p>
 
     <div id="banner" class="banner hide">
       <h1 id="subject">Weekly Market Update</h1>
@@ -197,6 +197,29 @@
   var el = function(id){ return document.getElementById(id); };
   var stage = el("stage"), bar = el("bar"), banner = el("banner"), note = el("note");
   var MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  // 0516, the first-issue preview: Luke's own link to a new agent's first newsletter. Same email, his two taps instead of
+  // the agent's sign-off. The agent has not seen it; nothing goes to them until he taps Looks right.
+  var preview = null;
+  function firstWord(name){ return String(name || "").trim().split(/\s+/)[0] || "them"; }
+  function paintPreview(p){
+    var pill = el("statuspill"), approve = el("approveBtn"), hold = el("holdBtn"), who = firstWord(p.agent_name);
+    approve.disabled = false; hold.disabled = false;
+    approve.textContent = "\u2713 Looks right, send to " + who;
+    hold.textContent = "Not yet";
+    if(p.cleared){
+      pill.textContent = "Cleared. " + who + " gets their sign-off ask next"; pill.className = "pill ok";
+      approve.textContent = "\u2713 Cleared"; approve.disabled = true; hold.disabled = true;
+    } else if(p.last_action === "not_yet"){
+      pill.textContent = "Held by you. " + who + " hasn't seen it"; pill.className = "pill";
+    } else {
+      pill.textContent = "Waiting on you. " + who + " hasn't seen it"; pill.className = "pill";
+    }
+  }
+  function whenText(when, who){
+    if(when === "now") return who + "'s assistant texts them their sign-off link in the next few minutes.";
+    if(when === "monday_8am") return who + "'s assistant texts them their sign-off link Monday at 8am.";
+    return who + " gets their first sign-off ask with next Monday's issue.";
+  }
 
   function weekLabel(ymd){
     var m = String(ymd || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -445,6 +468,12 @@
     var d = res.d || {};
     if(res.status === 410){ message("This link has expired. This week's issue is already past its send time."); return; }
     if(!d.ok){ message("We couldn't find this issue. The link may have expired."); return; }
+    if(d.preview){
+      preview = d.preview;
+      el("eyebrow").textContent = "SMRT \u00b7 First-issue preview";
+      document.title = "Preview " + firstWord(preview.agent_name) + "'s first newsletter";
+      note.textContent = "This is " + preview.agent_name + "'s first newsletter, exactly as it would go out. They haven't seen it. Nothing goes to them until you tap Looks right.";
+    }
     el("subject").textContent = d.subject_line || "Weekly Market Update";
     el("weekmeta").textContent = weekLabel(d.week_start_date);
     banner.classList.remove("hide");
@@ -454,11 +483,25 @@
     showEmail(d.html);
     note.classList.remove("hide");
     bar.classList.remove("hide");
-    paint(d);
+    if(preview) paintPreview(preview); else paint(d);
   }).catch(function(){ message("Something went wrong loading the issue. Please try again."); });
 
   el("approveBtn").addEventListener("click", function(){
-    var b = this; b.textContent = "Signing off\u2026";
+    var b = this;
+    if(preview){
+      var who = firstWord(preview.agent_name);
+      b.textContent = "Clearing\u2026";
+      act("preview_clear").then(function(res){
+        if(res.d && res.d.ok){
+          preview.cleared = true; paintPreview(preview);
+          result("approved", "Cleared", whenText(res.d.ask_when, who));
+        } else {
+          paintPreview(preview); alert(res.status === 410 ? "This link has expired." : "Couldn't clear it. Please try again.");
+        }
+      }).catch(function(){ paintPreview(preview); alert("Couldn't clear it. Please try again."); });
+      return;
+    }
+    b.textContent = "Signing off\u2026";
     act("approve").then(function(res){
       if(res.d && res.d.ok){
         paint({ signed_off: true });
@@ -470,7 +513,23 @@
     }).catch(function(){ paint({}); alert("Couldn't sign off. Please try again."); });
   });
   el("holdBtn").addEventListener("click", function(){
-    var b = this; b.textContent = "Holding\u2026";
+    var b = this;
+    if(preview){
+      var who2 = firstWord(preview.agent_name);
+      b.textContent = "Holding\u2026";
+      act("preview_not_yet").then(function(res){
+        if(res.d && res.d.ok){
+          preview.last_action = "not_yet"; paintPreview(preview);
+          result("held", "Held", "Nothing goes to " + who2 + ". Come back to this link and tap Looks right when it's ready.");
+        } else if(res.d && res.d.error === "already_cleared"){
+          preview.cleared = true; paintPreview(preview);
+        } else {
+          paintPreview(preview); alert(res.status === 410 ? "This link has expired." : "Couldn't hold it. Please try again.");
+        }
+      }).catch(function(){ paintPreview(preview); alert("Couldn't hold it. Please try again."); });
+      return;
+    }
+    b.textContent = "Holding\u2026";
     act("hold").then(function(res){
       if(res.d && res.d.ok){
         paint({ held: true });

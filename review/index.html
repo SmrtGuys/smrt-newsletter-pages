@@ -58,6 +58,18 @@
   .revise:hover{border-color:#cdc8c0;}
   .hold{background:var(--white);color:var(--red);border-color:#f3d9c9;flex:0 0 auto;padding-left:16px;padding-right:16px;}
   .hold:hover{border-color:#e9c3ad;background:#fffaf7;}
+  .without{background:var(--white);color:var(--navy);border-color:#c5d3e3;}
+  .without:hover{border-color:#9fb6cf;}
+  /* 0532: while the quote waits on the owner, the sign-off is two choices. On a phone they take the top row and Hold the row under them. */
+  .bar.quote-mode .bar-inner{display:grid;grid-template-columns:1fr 1fr;}
+  .bar.quote-mode .hold{grid-column:1 / -1;grid-row:2;}
+  .bar.quote-mode button{font-size:14px;padding:12px 10px;}
+  body.quote-mode{padding-bottom:170px;}
+  @media (min-width:600px){
+    .bar.quote-mode .bar-inner{grid-template-columns:auto 1fr 1fr;}
+    .bar.quote-mode .hold{grid-column:auto;grid-row:auto;}
+    body.quote-mode{padding-bottom:120px;}
+  }
   button:active{transform:translateY(1px) scale(.99);}
   button:disabled{opacity:.55;cursor:default;transform:none;box-shadow:none;}
   /* revision sheet */
@@ -87,6 +99,17 @@
   .result.held .icon{background:#fdeee6;color:var(--red);}
   .result h2{font-size:18px;font-weight:700;margin:0 0 6px;}
   .result p{font-size:14px;color:var(--muted);margin:0;line-height:1.55;}
+  /* 0532: the pull quote prints under the owner's name, so it goes out only when they approve it. */
+  .quote{background:var(--white);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin:0 0 18px;}
+  .quote-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;}
+  .quote-head h2{font-size:10px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:var(--navy);margin:0;}
+  .quote-head .pill{margin-top:0;}
+  .pill.out{background:#f1efec;color:var(--muted);border-color:var(--border);}
+  .quote-text{font-size:17px;font-weight:600;line-height:1.4;margin:0 0 8px;overflow-wrap:anywhere;}
+  .quote.out .quote-text{color:var(--muted);}
+  .quote-note{font-size:13px;color:var(--muted);margin:0;line-height:1.5;}
+  .quote-btn{background:var(--white);color:var(--navy);border-color:var(--border);flex:none;margin-top:12px;font-size:14px;padding:10px 14px;}
+  .quote-btn:hover{border-color:#cdc8c0;}
   /* FEA-MVZP96SV: the week's Instagram slides, with their own approval. Shown exactly as they post: no crop, no filter, no overlay. */
   .slides{margin:26px 0 0;}
   .slides h2{font-size:19px;font-weight:700;line-height:1.3;margin:0 0 4px;letter-spacing:-.01em;}
@@ -156,6 +179,13 @@
       <a id="slidesJump" class="pill jump hide" href="#slides">Instagram slides ready</a>
     </div>
 
+    <section id="quote" class="quote hide" aria-labelledby="quoteLabel">
+      <div class="quote-head"><h2 id="quoteLabel">Your quote</h2><span id="quotePill" class="pill">Needs your sign-off</span></div>
+      <p id="quoteText" class="quote-text"></p>
+      <p id="quoteNote" class="quote-note"></p>
+      <button id="quoteBtn" class="quote-btn hide" type="button"></button>
+    </section>
+
     <div id="stage">
       <div class="draft"><div class="loading">Loading this week's issue&hellip;</div></div>
     </div>
@@ -186,6 +216,7 @@
   <div id="bar" class="bar hide">
     <div class="bar-inner">
       <button class="hold" id="holdBtn" type="button">Hold this week</button>
+      <button class="without hide" id="withoutBtn" type="button">Approve without it</button>
       <button class="approve" id="approveBtn" type="button">&#10003; Approve &amp; send</button>
     </div>
   </div>
@@ -215,6 +246,12 @@
       pill.textContent = "Waiting on you. " + who + " hasn't seen it"; pill.className = "pill";
     }
   }
+  // 0532 (FEA-MWMHNVDP): this issue's pull quote, or null when its look prints none. The quote prints under the owner's name, so it goes
+  // out only when they approve it: "Approve with quote" says yes to it, "Approve without it" (the plain approve) sends the issue without it.
+  var quote = null, view = null;
+  var NOTE = note.textContent;
+  // The sign-off is two choices while the quote can still be decided and the issue is not approved yet.
+  function choosing(d){ return !!(quote && quote.can_decide && d && d.approval_status !== "approved"); }
   function whenText(when, who){
     if(when === "now") return who + "'s assistant texts them their sign-off link in the next few minutes.";
     if(when === "monday_8am") return who + "'s assistant texts them their sign-off link Monday at 8am.";
@@ -243,19 +280,67 @@
   }
   function paint(d){
     var pill = el("statuspill");
-    var approve = el("approveBtn"), hold = el("holdBtn");
-    approve.disabled = false; hold.disabled = false;
-    approve.textContent = "\u2713 Approve & send";
+    var approve = el("approveBtn"), hold = el("holdBtn"), without = el("withoutBtn");
+    var choose = choosing(d);
+    approve.disabled = false; hold.disabled = false; without.disabled = false;
+    approve.textContent = choose ? "Approve with quote" : "\u2713 Approve & send";
+    without.textContent = "Approve without it";
     hold.textContent = "Hold this week";
+    without.classList.toggle("hide", !choose);
+    bar.classList.toggle("quote-mode", choose); document.body.classList.toggle("quote-mode", choose);
     if(d.signed_off){
-      pill.textContent = "Signed off. Sends Tuesday 8:30am"; pill.className = "pill ok";
+      pill.textContent = "Signed off. Sends Tuesday"; pill.className = "pill ok";
       approve.textContent = "\u2713 Approved"; approve.disabled = true;
     } else if(d.held){
       pill.textContent = "Held. Not sending this week"; pill.className = "pill";
-      hold.disabled = true; approve.textContent = "\u2713 Send it after all";
+      hold.disabled = true;
+      if(choose){ approve.textContent = "Send with quote"; without.textContent = "Send without it"; }
+      else approve.textContent = "\u2713 Send it after all";
     } else {
       pill.textContent = "Waiting on your sign-off"; pill.className = "pill";
     }
+  }
+  // 0532: the quote card. Pending: the choice is in the bar. Approved or left out: one button changes the decision while it still can change.
+  function showQuote(d){
+    var box = el("quote"), pill = el("quotePill"), qnote = el("quoteNote"), btn = el("quoteBtn");
+    if(!quote){ box.classList.add("hide"); return; }
+    el("quoteText").textContent = "\u201c" + quote.text + "\u201d";
+    box.classList.toggle("out", quote.state === "left_out");
+    btn.classList.add("hide"); btn.disabled = false;
+    if(quote.state === "approved"){
+      pill.textContent = "Approved"; pill.className = "pill ok";
+      qnote.textContent = "It goes out under your name.";
+      // Take back: the plain approve, which keeps the issue approved and leaves the quote out. Not while held (that would also send it).
+      if(quote.can_decide && d.approval_status === "approved"){ btn.textContent = "Take back my approval"; btn.setAttribute("data-action", "approve"); btn.classList.remove("hide"); }
+    } else if(quote.state === "left_out"){
+      pill.textContent = "Left out"; pill.className = "pill out";
+      qnote.textContent = "This issue goes out without it.";
+      if(quote.can_decide){ btn.textContent = "Put the quote back"; btn.setAttribute("data-action", "approve_with_quote"); btn.classList.remove("hide"); }
+    } else {
+      pill.textContent = "Needs your sign-off"; pill.className = "pill";
+      qnote.textContent = "It prints under your name, so it goes out only if you approve it.";
+    }
+    if(!quote.can_decide) qnote.textContent += " The newsletter is already going out, so this can't change now.";
+    box.classList.remove("hide");
+  }
+  // The issue, its quote and the sign-off buttons, from the server's answer. Run on load and again after each quote decision, because the
+  // email the server draws changes with it.
+  function showIssue(d){
+    view = d;
+    quote = !d.preview && d.quote ? d.quote : null;
+    if(d.revision_in_progress || !d.html){
+      el("quote").classList.add("hide"); note.classList.add("hide"); bar.classList.add("hide");
+      message(d.revision_in_progress ? "A revision is in progress. You'll get a fresh link to sign off once it's ready." : "The preview couldn't be built (" + (d.render_error || "unknown") + "). Nothing will send until it's fixed.");
+      return;
+    }
+    showQuote(d);
+    // While the quote waits on the owner, the email is shown with it, so they see what they would sign.
+    var withQuote = !!(quote && quote.state === "pending" && quote.preview_html);
+    showEmail(withQuote ? quote.preview_html : d.html);
+    if(!d.preview) note.textContent = withQuote ? "This is the email as it goes out with your quote. Approve without it and only the quote comes out. Want other changes? Reply to the text with what you'd change." : NOTE;
+    note.classList.remove("hide");
+    bar.classList.remove("hide");
+    if(preview) paintPreview(preview); else paint(d);
   }
   function showEmail(html){
     var frame = document.createElement("iframe");
@@ -269,6 +354,7 @@
         Array.prototype.forEach.call(doc.querySelectorAll("a[href]"), function(a){ a.setAttribute("target", "_blank"); a.setAttribute("rel", "noopener"); });
         // Fit to width the way a mail app does: lay the email out at its own width, then scale it down to the card.
         var fit = function(){
+          if(!box.isConnected) return; // 0532: a quote decision redraws the email; the old frame's listener stops here
           frame.style.transform = "none"; frame.style.width = "100%";
           var avail = box.clientWidth;
           var natural = Math.max(doc.documentElement.scrollWidth, doc.body ? doc.body.scrollWidth : 0);
@@ -292,9 +378,34 @@
       .then(function(r){ return r.json().then(function(d){ return { status: r.status, d: d }; }); });
   }
   function act(action){
-    var approve = el("approveBtn"), hold = el("holdBtn");
-    approve.disabled = true; hold.disabled = true;
+    ["approveBtn", "holdBtn", "withoutBtn", "quoteBtn"].forEach(function(id){ el(id).disabled = true; });
     return post(action);
+  }
+  function reload(){
+    return fetch(FN + "?t=" + encodeURIComponent(token)).then(function(r){ return r.json(); }).then(function(d){
+      if(d && d.ok) showIssue(d);
+      return d;
+    });
+  }
+  // 0532: the quote decisions. Each is a sign-off too (approve_with_quote: with the quote; approve: without it). The email the server
+  // draws changes with the decision, so the page asks the server again and repaints before saying what happened.
+  function decide(action, button, title, body){
+    button.textContent = "Signing off…";
+    act(action).then(function(res){
+      var d = res.d || {};
+      if(d.ok){
+        reload().catch(function(){ bar.classList.add("hide"); }).then(function(){ result("approved", title, body); refreshSlides(); });
+        return;
+      }
+      var why = res.status === 410 ? "This link has expired."
+        : d.error === "already_sending" ? "The newsletter is already going out, so the quote can't change now."
+        : d.error === "no_quote" ? "This issue has no quote to approve."
+        : d.error === "revision_in_progress" ? ""
+        : "Couldn't sign off. Please try again.";
+      reload().catch(function(){ if(view) paint(view); }).then(function(){ if(why) alert(why); });
+    }).catch(function(){
+      reload().catch(function(){ if(view) paint(view); }).then(function(){ alert("Couldn't sign off. Please try again."); });
+    });
   }
 
   // ---- FEA-MVZP96SV: the Instagram slides. Their own decision: nothing here reads or changes the newsletter's state. ----
@@ -478,12 +589,7 @@
     el("weekmeta").textContent = weekLabel(d.week_start_date);
     banner.classList.remove("hide");
     showSlides(d); // the slides never wait on, or follow, the newsletter's state
-    if(d.revision_in_progress){ message("A revision is in progress. You'll get a fresh link to sign off once it's ready."); return; }
-    if(!d.html){ message("The preview couldn't be built (" + (d.render_error || "unknown") + "). Nothing will send until it's fixed."); return; }
-    showEmail(d.html);
-    note.classList.remove("hide");
-    bar.classList.remove("hide");
-    if(preview) paintPreview(preview); else paint(d);
+    showIssue(d);
   }).catch(function(){ message("Something went wrong loading the issue. Please try again."); });
 
   el("approveBtn").addEventListener("click", function(){
@@ -501,11 +607,12 @@
       }).catch(function(){ paintPreview(preview); alert("Couldn't clear it. Please try again."); });
       return;
     }
+    if(choosing(view)){ decide("approve_with_quote", b, "Signed off, with your quote", "It goes out Tuesday, with your quote under your name."); return; }
     b.textContent = "Signing off\u2026";
     act("approve").then(function(res){
       if(res.d && res.d.ok){
         paint({ signed_off: true });
-        result("approved", "Signed off", "It goes out Tuesday at 8:30am. A copy is on its way to your inbox too.");
+        result("approved", "Signed off", "It goes out Tuesday. A copy is on its way to your inbox too.");
         refreshSlides();
       } else {
         paint({}); alert(res.status === 410 ? "This link has expired." : "Couldn't sign off. Please try again.");
@@ -530,15 +637,27 @@
       return;
     }
     b.textContent = "Holding\u2026";
+    // 0532: with a quote, the server's answer repaints the page (the two Send buttons and the quote card follow the hold).
+    var restore = function(){ return quote ? reload().catch(function(){ if(view) paint(view); }) : Promise.resolve(paint({})); };
     act("hold").then(function(res){
       if(res.d && res.d.ok){
-        paint({ held: true });
-        result("held", "Held", "Nothing goes out this week. Changed your mind? Tap Send it after all.");
-        refreshSlides();
+        var held = function(){
+          result("held", "Held", "Nothing goes out this week. Changed your mind? Tap " + (quote ? "Send with quote or Send without it." : "Send it after all."));
+          refreshSlides();
+        };
+        if(quote) reload().catch(function(){}).then(held); else { paint({ held: true }); held(); }
       } else {
-        paint({}); alert(res.status === 410 ? "This link has expired." : "Couldn't hold. Please try again.");
+        restore().then(function(){ alert(res.status === 410 ? "This link has expired." : "Couldn't hold. Please try again."); });
       }
-    }).catch(function(){ paint({}); alert("Couldn't hold. Please try again."); });
+    }).catch(function(){ restore().then(function(){ alert("Couldn't hold. Please try again."); }); });
+  });
+  el("withoutBtn").addEventListener("click", function(){
+    decide("approve", this, "Signed off, without the quote", "It goes out Tuesday, without the quote.");
+  });
+  el("quoteBtn").addEventListener("click", function(){
+    var action = this.getAttribute("data-action");
+    if(action === "approve") decide("approve", this, "Quote taken out", "It still goes out Tuesday, now without the quote.");
+    else if(action === "approve_with_quote") decide("approve_with_quote", this, "Quote put back", "It goes out Tuesday, with your quote under your name.");
   });
 })();
 </script>

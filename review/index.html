@@ -628,7 +628,8 @@
     wpActions.classList.toggle("hide", !waiting);
     wpBefore.classList.toggle("hide", !waiting);
     if(waiting){
-      wpBefore.textContent = "Approve it and it goes up on Instagram in about 25 minutes. If you don't, it skips this week. You have until midnight tonight.";
+      var by = onWhen(s.deadline);
+      wpBefore.textContent = "Approve it and it goes up on Instagram in about 25 minutes. If you don't, it skips this week." + (by ? " You have until " + by.replace(/^on /, "") + "." : "");
       wpStatus.className = "slides-status hide";
       wpJump.textContent = "Monday post waiting"; wpJump.className = "pill jump";
       return;
@@ -709,14 +710,20 @@
         if(res.status === 410){ wpMsg.textContent = "This link has expired."; return; }
         if(d.error === "busy"){ again(); wpMsg.textContent = "Your assistant is texting you about this post right now. Try again in a minute."; return; }
         if(d.error === "not_current" && d.reason === "content_changed"){ wpMsg.textContent = "This post changed since the page loaded. Please reload to see the latest before approving."; return; }
+        if(d.error === "not_current" || d.error === "not_eligible"){ if(d.work_post) wpPaint(d.work_post); else wpMsg.textContent = "This post can't be approved anymore."; return; }
         again(); wpMsg.textContent = "Couldn't save that. Please try again.";
       })
       .catch(function(){ again(); wpMsg.textContent = "Couldn't save that. Please try again."; });
   }
   wpApprove.addEventListener("click", function(){ wpAnswer("approve_work_post"); });
+  // The first answer stands, so a skip is checked once: the first tap asks, a second tap within a few seconds skips. (No window.confirm: some
+  // in-app browsers that open links from a text message suppress it, and the button would silently do nothing.)
+  var skipArmed = null;
   wpSkip.addEventListener("click", function(){
-    // the first answer stands, so a skip is checked once
-    if(window.confirm("Skip Monday's Instagram post this week? Nothing will post, and this can't be changed afterwards.")) wpAnswer("skip_work_post");
+    if(skipArmed){ clearTimeout(skipArmed); skipArmed = null; wpSkip.textContent = "Skip this week"; wpAnswer("skip_work_post"); return; }
+    wpSkip.textContent = "Tap again to skip";
+    wpMsg.textContent = "Skipping means nothing posts this week, and it can't be changed afterwards.";
+    skipArmed = setTimeout(function(){ skipArmed = null; wpSkip.textContent = "Skip this week"; wpMsg.textContent = ""; }, 5000);
   });
 
   if(!/^[0-9a-f]{64}$/.test(token)){ message("This link is missing its code. Please use the link from your text."); return; }

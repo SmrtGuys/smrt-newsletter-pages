@@ -156,6 +156,17 @@
   .slides-status.warn{background:#fff7ed;color:var(--red);border-color:#f3d9c9;}
   .posts-at{font-size:14px;color:var(--ink);text-align:center;margin:0 0 12px;line-height:1.5;}
   .slides-msg{font-size:13px;color:var(--muted);text-align:center;margin:10px 0 0;line-height:1.5;min-height:1em;}
+  /* FEA-MWTGYZXR: Monday's Instagram post (last week's numbers), with its own two buttons. Both slides side by side, exactly as they post. */
+  .workpost{margin:26px 0 0;}
+  .workpost h2{font-size:19px;font-weight:700;line-height:1.3;margin:0 0 4px;letter-spacing:-.01em;}
+  .workpost .sub{font-size:13px;color:var(--muted);margin:0 0 14px;line-height:1.5;}
+  .wp-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:440px;margin:0 auto;}
+  .wp-pair figure{margin:0;}
+  .wp-pair img{display:block;width:100%;height:auto;aspect-ratio:4/5;background:#ece9e4;border:1px solid var(--border);}
+  .wp-pair a{display:block;}
+  .wp-actions{display:flex;gap:10px;max-width:440px;margin:0 auto;}
+  .wp-actions button{flex:1;}
+  .wp-actions .skip{background:var(--white);color:var(--ink);border-color:var(--border);}
   a.pill.jump{text-decoration:none;}
   #statuspill{margin-right:6px;}
   .bar{transition:transform .2s ease;}
@@ -177,6 +188,7 @@
       <div class="meta" id="weekmeta"></div>
       <span id="statuspill" class="pill">Waiting on your sign-off</span>
       <a id="slidesJump" class="pill jump hide" href="#slides">Instagram slides ready</a>
+      <a id="workpostJump" class="pill jump hide" href="#workpost">Monday post waiting</a>
     </div>
 
     <section id="quote" class="quote hide" aria-labelledby="quoteLabel">
@@ -190,6 +202,23 @@
       <div class="draft"><div class="loading">Loading this week's issue&hellip;</div></div>
     </div>
     <p id="note" class="note hide">This is the email exactly as it goes out. Want changes? Reply to the text with what you'd change.</p>
+
+    <section id="workpost" class="workpost hide" aria-labelledby="workpostTitle">
+      <p class="eyebrow">SMRT &middot; Monday Instagram post</p>
+      <h2 id="workpostTitle">Monday's Instagram post</h2>
+      <p class="sub" id="workpostSub">Last week's numbers, exactly as it posts. Approving it is separate from the newsletter.</p>
+      <div id="wpPair" class="wp-pair"></div>
+      <div class="caption-card"><h3>Caption</h3><p id="wpCaption"></p></div>
+      <div class="slides-action">
+        <p id="wpBefore" class="posts-at hide"></p>
+        <div id="wpActions" class="wp-actions hide">
+          <button id="wpSkipBtn" class="skip" type="button" disabled>Skip this week</button>
+          <button id="wpApproveBtn" class="approve" type="button" disabled>&#10003; Approve post</button>
+        </div>
+        <div id="wpStatus" class="slides-status hide" role="status"></div>
+        <p id="wpMsg" class="slides-msg" role="status"></p>
+      </div>
+    </section>
 
     <section id="slides" class="slides hide" aria-labelledby="slidesTitle">
       <p class="eyebrow">SMRT &middot; Instagram slides</p>
@@ -571,6 +600,132 @@
     }).catch(function(){ b.disabled = false; b.textContent = "\u2713 Approve slides"; slidesMsg.textContent = "Couldn't approve the slides. Please try again."; });
   });
 
+  // ---- FEA-MWTGYZXR: Monday's Instagram post (last week's numbers). Its own decision: nothing here reads or changes the newsletter's state or the
+  // Wednesday slides. A tap is the same answer as a text reply: the first answer stands, by page or by text. ----
+  var wpEl = el("workpost"), wpPair = el("wpPair"), wpActions = el("wpActions"), wpApprove = el("wpApproveBtn"), wpSkip = el("wpSkipBtn");
+  var wpStatus = el("wpStatus"), wpMsg = el("wpMsg"), wpBefore = el("wpBefore"), wpJump = el("workpostJump");
+  var wp = null; // the post as the page showed it (its hash goes back with a tap)
+  function wpPostingText(s){
+    var by = s.answered_via === "sms" ? " (you approved it by text)" : "";
+    switch(s.posting){
+      case "scheduled": return { text: onWhen(s.scheduled_for) ? "Approved" + by + ". It goes up on Instagram " + onWhen(s.scheduled_for) + "." : "Approved" + by + ". It's lined up to go up on Instagram.", warn: false };
+      case "planned": return { text: "Approved" + by + ". It goes up on Instagram in about 25 minutes.", warn: false };
+      case "waiting": return { text: "Approved" + by + ". Getting it ready to post.", warn: false };
+      case "not_live": return { text: "Approved. Posting to Instagram isn't switched on for your account yet, so nothing goes up for now.", warn: true };
+      case "skipped":
+        if(s.reason === "switch_off") return { text: "Approved, but posting to Instagram is switched off for your account, so it won't go up.", warn: true };
+        if(s.reason === "no_connection" || s.reason === "connection_expired") return { text: "Approved, but Instagram isn't connected right now, so it won't go up.", warn: true };
+        if(s.reason === "too_old") return { text: "Approved, but too much time went by to post it.", warn: true };
+        return { text: "Approved, but it didn't go up.", warn: true };
+      case "problem": return { text: "Approved. Something held up the posting and we're looking into it.", warn: true };
+      default: return { text: "Approved" + by + ".", warn: false };
+    }
+  }
+  // Everything that changes with an answer, from the server's own word for it.
+  function wpPaint(s){
+    wpMsg.textContent = "";
+    var waiting = s.state === "waiting";
+    wpActions.classList.toggle("hide", !waiting);
+    wpBefore.classList.toggle("hide", !waiting);
+    if(waiting){
+      var by = onWhen(s.deadline);
+      wpBefore.textContent = "Approve it and it goes up on Instagram in about 25 minutes. If you don't, it skips this week." + (by ? " You have until " + by.replace(/^on /, "") + "." : "");
+      wpStatus.className = "slides-status hide";
+      wpJump.textContent = "Monday post waiting"; wpJump.className = "pill jump";
+      return;
+    }
+    var t = s.state === "approved" ? wpPostingText(s)
+      : s.state === "skipped" ? { text: "Skipped. Nothing posts this week.", warn: false }
+      : s.state === "too_late" ? { text: "This post wasn't approved in time, so it didn't go up this week.", warn: true }
+      : { text: "This post can't go up right now: Instagram isn't connected for posting.", warn: true };
+    wpStatus.textContent = t.text;
+    wpStatus.className = "slides-status" + (t.warn ? " warn" : "");
+    wpJump.textContent = s.state === "approved" ? "Monday post approved" : s.state === "skipped" ? "Monday post skipped" : "Monday post";
+    wpJump.className = "pill jump" + (s.state === "approved" ? " ok" : "");
+    if(s.state === "approved") wpWatch(s);
+  }
+  // The hand-off runs right after the approval: check back a few times so the page can say when it goes up, then stop.
+  var wpWatching = false;
+  function wpWatch(s){
+    if(wpWatching || (s.posting !== "planned" && s.posting !== "waiting")) return;
+    wpWatching = true;
+    var delays = [8000, 20000, 45000], i = 0;
+    (function tick(){
+      if(i >= delays.length){ wpWatching = false; return; }
+      setTimeout(function(){
+        fetch(FN + "?t=" + encodeURIComponent(token)).then(function(r){ return r.json(); }).then(function(d){
+          var n = d && d.work_post;
+          if(n && n.posting && n.posting !== "planned" && n.posting !== "waiting"){ wpWatching = false; wpPaint(n); }
+          else { i++; tick(); }
+        }).catch(function(){ i++; tick(); });
+      }, delays[i]);
+    })();
+  }
+  function showWorkPost(d){
+    var s = d.work_post;
+    if(!s || !s.slides || s.slides.length < 1){
+      if(d.work_post_error){
+        wpEl.classList.remove("hide");
+        el("workpostSub").textContent = "Monday's Instagram post couldn't be loaded. Please reload the page in a minute.";
+        [wpPair, wpActions, wpBefore].forEach(function(n){ n.classList.add("hide"); });
+        wpEl.querySelector(".caption-card").classList.add("hide");
+      }
+      return;
+    }
+    wp = s;
+    wpPair.textContent = "";
+    var loaded = 0, broken = false;
+    s.slides.forEach(function(x, i){
+      var fig = document.createElement("figure");
+      var a = document.createElement("a"); a.href = x.url; a.target = "_blank"; a.rel = "noopener"; a.setAttribute("aria-label", "Open slide " + (i + 1) + " full size");
+      var img = document.createElement("img"); img.alt = x.alt || ("Slide " + (i + 1)); img.decoding = "async";
+      img.addEventListener("load", function(){ loaded++; if(loaded === s.slides.length && !broken){ wpApprove.disabled = false; wpSkip.disabled = false; } });
+      img.addEventListener("error", function(){ broken = true; wpApprove.disabled = true; wpSkip.disabled = true; wpMsg.textContent = "A slide didn't load. Please reload the page before approving."; });
+      img.src = x.url;
+      a.appendChild(img); fig.appendChild(a); wpPair.appendChild(fig);
+    });
+    el("wpCaption").textContent = s.caption || "";
+    wpEl.classList.remove("hide");
+    wpJump.classList.remove("hide");
+    wpPaint(s);
+    if("IntersectionObserver" in window){
+      new IntersectionObserver(function(entries){
+        entries.forEach(function(e){ bar.classList.toggle("away", e.isIntersecting); });
+      }, { threshold: 0.35 }).observe(wpEl);
+    }
+  }
+  function wpAnswer(action){
+    if(!wp) return;
+    var busyBtn = action === "approve_work_post" ? wpApprove : wpSkip, label = busyBtn.textContent;
+    wpApprove.disabled = true; wpSkip.disabled = true; wpMsg.textContent = "";
+    busyBtn.textContent = action === "approve_work_post" ? "Approving…" : "Skipping…";
+    var again = function(){ busyBtn.textContent = label; wpApprove.disabled = false; wpSkip.disabled = false; };
+    fetch(FN, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t: token, action: action, content_sha256: wp.content_sha256 }) })
+      .then(function(r){ return r.json().then(function(d){ return { status: r.status, d: d }; }); })
+      .then(function(res){
+        var d = res.d || {};
+        busyBtn.textContent = label;
+        // ok, or already answered (by text or another tap): the stored answer is what the page shows
+        if(d.work_post && (d.ok || d.work_post.state !== "waiting")){ wpPaint(d.work_post); if(d.ok && d.already) wpMsg.textContent = "This was already decided, so nothing changed."; return; }
+        if(res.status === 410){ wpMsg.textContent = "This link has expired."; return; }
+        if(d.error === "busy"){ again(); wpMsg.textContent = "Your assistant is texting you about this post right now. Try again in a minute."; return; }
+        if(d.error === "not_current" && d.reason === "content_changed"){ wpMsg.textContent = "This post changed since the page loaded. Please reload to see the latest before approving."; return; }
+        if(d.error === "not_current" || d.error === "not_eligible"){ if(d.work_post) wpPaint(d.work_post); else wpMsg.textContent = "This post can't be approved anymore."; return; }
+        again(); wpMsg.textContent = "Couldn't save that. Please try again.";
+      })
+      .catch(function(){ again(); wpMsg.textContent = "Couldn't save that. Please try again."; });
+  }
+  wpApprove.addEventListener("click", function(){ wpAnswer("approve_work_post"); });
+  // The first answer stands, so a skip is checked once: the first tap asks, a second tap within a few seconds skips. (No window.confirm: some
+  // in-app browsers that open links from a text message suppress it, and the button would silently do nothing.)
+  var skipArmed = null;
+  wpSkip.addEventListener("click", function(){
+    if(skipArmed){ clearTimeout(skipArmed); skipArmed = null; wpSkip.textContent = "Skip this week"; wpAnswer("skip_work_post"); return; }
+    wpSkip.textContent = "Tap again to skip";
+    wpMsg.textContent = "Skipping means nothing posts this week, and it can't be changed afterwards.";
+    skipArmed = setTimeout(function(){ skipArmed = null; wpSkip.textContent = "Skip this week"; wpMsg.textContent = ""; }, 5000);
+  });
+
   if(!/^[0-9a-f]{64}$/.test(token)){ message("This link is missing its code. Please use the link from your text."); return; }
 
   fetch(FN + "?t=" + encodeURIComponent(token)).then(function(r){
@@ -589,6 +744,7 @@
     el("weekmeta").textContent = weekLabel(d.week_start_date);
     banner.classList.remove("hide");
     showSlides(d); // the slides never wait on, or follow, the newsletter's state
+    if(!d.preview) showWorkPost(d); // FEA-MWTGYZXR: nor does Monday's post
     showIssue(d);
   }).catch(function(){ message("Something went wrong loading the issue. Please try again."); });
 

@@ -382,10 +382,10 @@
     return out;
   }
   function controlKeys(){
-    if(!ctx || !canEdit()) return [];
+    if(!ctx || !view || view.preview || view.revision_in_progress) return [];
     var ks = [];
-    sections.forEach(function(s){ if(ctx.keys.indexOf(skey(s.index)) >= 0) ks.push(skey(s.index)); });
-    if(quote && (ks.length || ctx.keys.indexOf("q") >= 0)) ks.push("q");
+    if(canEdit()) sections.forEach(function(s){ if(ctx.keys.indexOf(skey(s.index)) >= 0) ks.push(skey(s.index)); });
+    if(quote) ks.push("q");
     return ks;
   }
   function whenReady(fn){ if(!ctx) return; if(ctx.doc) fn(); else ctx.queue.push(fn); }
@@ -399,6 +399,7 @@
       var tag = ctx.doc.createElement("div"); tag.setAttribute("data-nl-tag", "1"); tag.textContent = decorate;
       n.insertBefore(tag, n.firstChild);
     }
+    Array.prototype.forEach.call(n.querySelectorAll("a[href]"), function(a){ a.setAttribute("target", "_blank"); a.setAttribute("rel", "noopener"); });
     cur.replaceWith(n);
     return n;
   }
@@ -411,7 +412,7 @@
     if(k !== "q") return doc.querySelector(selOf(k));
     var m = doc.querySelector(selOf("q")); if(m) return m;
     // The quote is left out of the email, so it has no block of its own: its row goes after the opening section.
-    var first = null; controlKeys().forEach(function(x){ if(!first && x !== "q") first = x; });
+    var first = null; ctx.keys.forEach(function(x){ if(!first && x !== "q") first = x; });
     if(!first) return null;
     return ctx.spacers[first] || doc.querySelector(selOf(first));
   }
@@ -614,10 +615,10 @@
     if(s.signed_off){
       var ck = mk("span", "nl-checked", "✓ Looks good"); ck.setAttribute("aria-label", "You said this part looks good");
       line.appendChild(ck);
-      line.appendChild(btn("Change this", "", function(){ setMode(k, "editing"); u.focus = true; }, u.saving));
+      line.appendChild(btn("Change this", "", function(){ u.focus = true; setMode(k, "editing"); }, u.saving));
     } else {
-      var ok = btn(u.saving ? "Saving…" : "✓ Looks good", "grow", function(){ tick(k); }, u.saving); ok.setAttribute("aria-label", "Looks good: " + t);
-      var ch = btn("Change this", "grow", function(){ setMode(k, "editing"); u.focus = true; }, u.saving); ch.setAttribute("aria-label", "Change " + t);
+      var ok = btn(u.saving ? "Saving…" : "Looks good", "grow", function(){ tick(k); }, u.saving); ok.setAttribute("aria-label", "Looks good: " + t);
+      var ch = btn("Change this", "grow", function(){ u.focus = true; setMode(k, "editing"); }, u.saving); ch.setAttribute("aria-label", "Change " + t);
       line.appendChild(ok); line.appendChild(ch);
     }
     row.appendChild(line);
@@ -637,7 +638,8 @@
     var cancel = btn("Cancel", "", function(){ u.mode = null; u.err = ""; renderRow(k); schedule(false); paintBar(); });
     var acts = mk("div", "nl-line"); acts.appendChild(go); acts.appendChild(cancel);
     row.appendChild(lab); row.appendChild(sw); row.appendChild(acts);
-    if(u.focus){ u.focus = false; setTimeout(function(){ try { ta.focus({ preventScroll: true }); } catch(e){ ta.focus(); } reveal(k); }, 0); }
+    // focus right inside the tap, so a phone raises the keyboard
+    if(u.focus){ u.focus = false; try { ta.focus({ preventScroll: true }); } catch(e){ ta.focus(); } }
   }
   function buildBusy(k, row){
     var u = uiOf(k), isQ = k === "q";
@@ -798,7 +800,7 @@
   }
   function fitPad(){ if(!bar.classList.contains("hide")) document.body.style.paddingBottom = (bar.offsetHeight + 28) + "px"; }
   function paintHint(){
-    var h = el("hint"), on = controlKeys().length > 0;
+    var h = el("hint"), on = canEdit() && controlKeys().length > 0;
     h.textContent = on ? HINT : ""; h.classList.toggle("hide", !on);
   }
   // The issue and the bar, from the server's answer. Run on load and again whenever the page asks the server again.

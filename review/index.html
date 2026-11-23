@@ -799,7 +799,7 @@
     var pill = el("statuspill"), approve = el("approveBtn"), hold = el("holdBtn");
     var busy = busyAny();
     approve.disabled = busy; hold.disabled = busy;
-    approve.textContent = "✓ Approve & send"; hold.textContent = "Hold this week";
+    approve.textContent = "✓ Approve everything"; hold.textContent = "Hold this week";
     if(d.signed_off){
       pill.textContent = "Signed off. Sends Tuesday"; pill.className = "pill ok";
       approve.textContent = "✓ Approved"; approve.disabled = true;
@@ -819,9 +819,18 @@
     if(barError) msgs.push(barError);
     else if(busy) msgs.push("Waiting for the rewrite to finish.");
     else if(!d.signed_off){
-      if(quote && quote.state === "pending" && quote.can_decide) msgs.push("Approving now sends it without your quote.");
+      // Approve everything also approves a quote that can still be decided; only a quote that can't be decided is left out
+      if(quote && quote.state === "pending" && !quote.can_decide) msgs.push("Approving now sends it without your quote.");
       var np = sections.filter(function(s){ return s.pending; }).length;
-      if(np) msgs.push(np === 1 ? "A new version is waiting and isn't used yet." : np + " new versions are waiting and aren't used yet.");
+      if(np) msgs.push(np === 1 ? "A new version is waiting and won't be used unless you tap Use this." : np + " new versions are waiting and won't be used unless you tap Use this.");
+    }
+    if(!barError && !busy && !preview){
+      // the Instagram slides and Monday post are their own decisions, with their own buttons
+      var sw = !slidesEl.classList.contains("hide") && !approveSlides.classList.contains("hide");
+      var pw = !wpEl.classList.contains("hide") && !wpActions.classList.contains("hide");
+      if(sw && pw) msgs.push("Your Instagram slides and post have their own buttons below.");
+      else if(pw) msgs.push("Your Instagram post has its own button below.");
+      else if(sw) msgs.push("Your Instagram slides have their own button below.");
     }
     var cEl = el("barCount"), mEl = el("barMsg");
     cEl.textContent = count; cEl.classList.toggle("hide", !count);
@@ -924,6 +933,7 @@
     slidesStatus.className = "slides-status" + (t.warn ? " warn" : "");
     slidesMsg.textContent = "";
     var jump = el("slidesJump"); jump.textContent = "Slides approved"; jump.className = "pill ok jump";
+    if(view) paintBar();
   }
   function step(){
     return track.children.length > 1 ? track.children[1].offsetLeft - track.children[0].offsetLeft : track.clientWidth;
@@ -1052,6 +1062,7 @@
       : { text: "This post can't go up right now: Instagram isn't connected for posting.", warn: true };
     wpStatus.textContent = t.text;
     wpStatus.className = "slides-status" + (t.warn ? " warn" : "");
+    if(view) paintBar();
     wpJump.textContent = s.state === "approved" ? "Monday post approved" : s.state === "skipped" ? "Monday post skipped" : "Monday post";
     wpJump.className = "pill jump" + (s.state === "approved" ? " ok" : "");
     if(s.state === "approved") wpWatch(s);
@@ -1176,20 +1187,27 @@
       return;
     }
     barError = "";
-    b.textContent = "Signing off…"; b.disabled = true; el("holdBtn").disabled = true;
-    var noQuote = !!(quote && quote.state === "pending");
-    api({ action: "approve_issue" }, 30000).then(function(res){
-      if(res.d && res.d.ok){
-        if(res.d.view) applyView(res.d.view);
+    b.textContent = "Approving…"; b.disabled = true; el("holdBtn").disabled = true;
+    var withQuote = !!(quote && quote.state === "pending" && quote.can_decide);
+    var fail = function(res){
+      if(res.d && res.d.error === "quote_changed" && res.d.view) applyView(res.d.view);
+      barError = errText(res); paintBar();
+      if(res.d && (res.d.error === "already_sending" || res.d.error === "revision_in_progress")) reload().catch(function(){});
+    };
+    // One tap: the quote first (when it prints and still waits on the owner), then the whole issue.
+    var first = withQuote ? api({ action: "quote_approve", quote_text: quote.text }, 30000) : Promise.resolve({ d: { ok: true } });
+    first.then(function(r1){
+      if(!(r1.d && r1.d.ok)){ fail(r1); return; }
+      return api({ action: "approve_issue" }, 30000).then(function(res){
+        if(!(res.d && res.d.ok)){ if(withQuote && r1.d.view) applyView(r1.d.view); fail(res); return; }
+        var v = res.d.view || r1.d.view;
+        if(v) applyView(v);
         view.signed_off = true; view.held = false;
-        paintBar();
-        result("approved", "Signed off", noQuote ? "It goes out Tuesday, without the quote, because you haven't approved it. A copy is on its way to your inbox too." : "It goes out Tuesday. A copy is on its way to your inbox too.");
+        sections.forEach(function(s){ s.signed_off = true; }); // the parts read as approved too, with no extra trip to the server
+        renderRows(); paintBar();
+        result("approved", "Approved", "It goes out Tuesday. A copy is on its way to your inbox too." + (quote && quote.state !== "approved" ? " The quote is not in it." : ""));
         refreshSlides();
-        if(!res.d.view) reload().catch(function(){});
-      } else {
-        barError = errText(res); paintBar();
-        if(res.d && (res.d.error === "already_sending" || res.d.error === "revision_in_progress")) reload().catch(function(){});
-      }
+      });
     });
   });
   el("holdBtn").addEventListener("click", function(){

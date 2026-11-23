@@ -121,6 +121,10 @@
   .nl-qtext{margin:6px 0 2px;font-size:15px;font-weight:600;color:var(--muted);overflow-wrap:anywhere;}
   .nl-qacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
   .nl-qacts .full{flex:1 1 100%;} .nl-qacts .half{flex:1 1 0;}
+  .nl-muted{flex:1;font-size:13px;color:var(--muted);}
+  .nl-find{margin:6px 0 2px;padding:8px 10px;background:#fff7ed;border:1px solid #f3d9c9;border-radius:8px;}
+  .nl-findh{margin:0 0 2px;font-size:13px;font-weight:700;color:var(--red);}
+  .nl-findi{margin:0 0 2px;font-size:13px;color:var(--ink);overflow-wrap:anywhere;}
   .nl-err{margin:8px 0 0;font-size:13px;color:var(--red);}
   .nl-err .nl-btn{display:inline-block;min-height:44px;vertical-align:middle;}
   .hint{flex-basis:100%;margin:12px 0 0;font-size:13px;line-height:1.5;color:var(--muted);}
@@ -290,7 +294,7 @@
   // sandboxed iframe and scaled to fit a phone, so the rows are NOT drawn inside it (they would shrink with it). Instead a gap (spacer) is put
   // inside the iframe after each marked block, and a full-size row from this page is laid over the gap. The email itself does not change.
   var view = null, quote = null, sections = [];
-  var ctx = null, rowRO = null, rowEls = {}, baseNode = {}, baseStr = {}, dirty = {}, previewOf = {}, ui = {}, barError = "";
+  var ctx = null, rowRO = null, rowEls = {}, ui = {}, barError = "";
   var NOTE = note.textContent;
   var HINT = "Read it through like the newsletter. Tap Looks good under a part if you like it, or Change this to have it rewritten or to type your own words. You can approve the whole issue at any time.";
   function whenText(when, who){
@@ -331,7 +335,15 @@
   function errText(res){
     var d = (res && res.d) || {}, why = d.error;
     if(res && res.status === 410 || why === "expired") return "This link has expired.";
-    if(why === "not_current") return "This changed since the page loaded. Please reload the page.";
+    if(res && res.status === 429) why = "too_many";
+    if(res && res.status === 504) why = "rewrite_timeout";
+    if(why === "not_current" || why === "content_moved") return "This changed since the page loaded. Please reload the page.";
+    if(why === "quote_changed") return "The quote changed. Take another look before approving.";
+    if(why === "quote_not_from_story") return "That line isn't in the newsletter. Pick a line from it, or type your own words.";
+    if(why === "quote_length") return "That quote is too long or too short. Please adjust it.";
+    if(why === "html_not_allowed") return "Plain text only, please.";
+    if(why === "bad_section_text") return "Keep it to this one section.";
+    if(why === "rewrite_failed") return "The rewrite didn't come through. Try again.";
     if(why === "already_sending") return "The newsletter is already going out, so it can't be changed now.";
     if(why === "revision_in_progress") return "A revision is in progress, so changes are paused. You'll get a fresh link once it's ready.";
     if(why === "rewrite_timeout" || why === "client_timeout") return "The rewrite took too long. Please try again.";
@@ -362,59 +374,54 @@
     });
   }
 
-  // ---- the email's marked blocks ----
+  // ---- the email's marked parts ----
+  // Every element that draws part of section i carries data-nl-section="i" (a section can be drawn in more than one place); the pull quote's
+  // paragraph carries data-nl-quote. A section's row goes after the LAST element carrying its number.
+  var activePreview = null; // a proposal drawn in place: {k, id, html, changed}
   function skey(i){ return "s" + i; }
   function selOf(k){ return k === "q" ? "[data-nl-quote]" : '[data-nl-section="' + k.slice(1) + '"]'; }
   function uiOf(k){ return ui[k] || (ui[k] = { mode: null, edit: "note", note: "", own: null, err: "", reload: false, saving: false, changed: false }); }
   function secOf(i){ for(var j = 0; j < sections.length; j++) if(sections[j].index === i) return sections[j]; return null; }
   function secTitle(i){ var s = secOf(i); return s && s.title ? s.title : "the opening"; }
   function canEdit(){ return !!(view && !view.preview && view.can_edit && !view.revision_in_progress); }
-  function parseMarkers(html){
-    var out = { nodes: {}, strs: {}, keys: [] };
-    var pd; try { pd = new DOMParser().parseFromString(html || "", "text/html"); } catch(e){ return out; }
+  function parseKeys(html){
+    var keys = [], pd;
+    try { pd = new DOMParser().parseFromString(html || "", "text/html"); } catch(e){ return keys; }
     Array.prototype.forEach.call(pd.querySelectorAll("[data-nl-section]"), function(n){
-      var k = "s" + n.getAttribute("data-nl-section");
-      if(!out.nodes[k]){ out.nodes[k] = n; out.strs[k] = n.outerHTML; out.keys.push(k); }
+      var k = "s" + n.getAttribute("data-nl-section"); if(keys.indexOf(k) < 0) keys.push(k);
     });
-    var q = pd.querySelector("[data-nl-quote]");
-    if(q){ out.nodes.q = q; out.strs.q = q.outerHTML; out.keys.push("q"); }
-    out.keys.sort();
-    return out;
+    if(pd.querySelector("[data-nl-quote]")) keys.push("q");
+    return keys;
   }
+  function drawn(k){ return !!(ctx && ctx.keys.indexOf(k) >= 0); }
+  // The rows, in reading order. A section with no body draws nothing, so its row (Change this only) follows the row before it. A quote that is
+  // not drawn in the email (not approved yet in this view, or left out) gets a row after the first section that is drawn.
   function controlKeys(){
     if(!ctx || !view || view.preview || view.revision_in_progress) return [];
-    var ks = [];
-    if(canEdit()) sections.forEach(function(s){ if(ctx.keys.indexOf(skey(s.index)) >= 0) ks.push(skey(s.index)); });
-    if(quote) ks.push("q");
-    return ks;
+    var L = [], qFall = quote && !drawn("q"), put = false;
+    if(canEdit()) sections.forEach(function(s){
+      var k = skey(s.index); L.push(k);
+      if(qFall && !put && drawn(k)){ L.push("q"); put = true; }
+    });
+    if(quote && !put) L.push("q");
+    return L;
   }
-  function whenReady(fn){ if(!ctx) return; if(ctx.doc) fn(); else ctx.queue.push(fn); }
-  // Swap one marked block in the live email for the server's version of it. decorate: draw it as a proposed new version.
-  function setMarker(k, node, decorate){
-    if(!ctx || !ctx.doc) return null;
-    var cur = ctx.doc.querySelector(selOf(k)); if(!cur) return null;
-    var n = ctx.doc.importNode(node, true);
-    if(decorate){
-      n.setAttribute("data-nl-new", "1");
-      var tag = ctx.doc.createElement("div"); tag.setAttribute("data-nl-tag", "1"); tag.textContent = decorate;
-      n.insertBefore(tag, n.firstChild);
-    }
-    Array.prototype.forEach.call(n.querySelectorAll("a[href]"), function(a){ a.setAttribute("target", "_blank"); a.setAttribute("rel", "noopener"); });
-    cur.replaceWith(n);
-    return n;
+  function elementsOf(k){ return ctx && ctx.doc ? Array.prototype.slice.call(ctx.doc.querySelectorAll(selOf(k))) : []; }
+  function setBusyDim(k, on){ elementsOf(k).forEach(function(n){ n.style.opacity = on ? "0.5" : ""; }); }
+  // A proposed new version drawn in place: a bar beside each of its parts and a small label before the first.
+  function decorate(k, label){
+    var els = elementsOf(k); if(!els.length) return;
+    els.forEach(function(n){ n.setAttribute("data-nl-new", "1"); });
+    var tag = ctx.doc.createElement("div"); tag.setAttribute("data-nl-tag", "1"); tag.textContent = label;
+    els[0].parentNode.insertBefore(tag, els[0]);
   }
-  function setBusyDim(k, on){
-    if(!ctx || !ctx.doc) return;
-    var n = ctx.doc.querySelector(selOf(k)); if(n) n.style.opacity = on ? "0.5" : "";
-  }
-  function anchorFor(k){
-    var doc = ctx.doc;
-    if(k !== "q") return doc.querySelector(selOf(k));
-    var m = doc.querySelector(selOf("q")); if(m) return m;
-    // The quote is left out of the email, so it has no block of its own: its row goes after the opening section.
+  function anchorFor(k, keys){
+    if(drawn(k)){ var els = elementsOf(k); return els.length ? els[els.length - 1] : null; }
+    var i = keys.indexOf(k), prev = i > 0 ? keys[i - 1] : null;
+    if(prev) return ctx.spacers[prev] || anchorFor(prev, keys);
     var first = null; ctx.keys.forEach(function(x){ if(!first && x !== "q") first = x; });
     if(!first) return null;
-    return ctx.spacers[first] || doc.querySelector(selOf(first));
+    var fe = elementsOf(first); return fe.length ? fe[fe.length - 1] : null;
   }
   function ensureSpacer(k, anchor){
     var sp = ctx.spacers[k];
@@ -427,7 +434,7 @@
     return sp;
   }
   function docHeight(doc){ return Math.max(doc.documentElement.scrollHeight, doc.body ? doc.body.scrollHeight : 0); }
-  // Fit the email to the card (full: measure its width again), open a gap after each marked block and lay each row over its gap.
+  // Fit the email to the card (full: measure its width again), open a gap after each marked part and lay each row over its gap.
   function reflow(full){
     var c = ctx; if(!c || !c.doc || !c.box.isConnected) return;
     var doc = c.doc, frame = c.frame, box = c.box;
@@ -443,17 +450,17 @@
     frame.style.transform = scale < 1 ? "scale(" + scale + ")" : "none";
     var keys = controlKeys(), live = [];
     keys.forEach(function(k){
-      var row = rowEls[k], anchor = row && anchorFor(k);
+      var row = rowEls[k], anchor = row && anchorFor(k, keys);
       if(!anchor){ if(row) row.style.display = "none"; return; }
       row.style.display = "";
       live.push({ k: k, row: row, sp: ensureSpacer(k, anchor) });
     });
-    Object.keys(c.spacers).forEach(function(k){ if(keys.indexOf(k) < 0){ c.spacers[k].remove(); delete c.spacers[k]; } });
+    Object.keys(c.spacers).forEach(function(k){ if(keys.indexOf(k) < 0 || !rowEls[k] || rowEls[k].style.display === "none"){ c.spacers[k].remove(); delete c.spacers[k]; } });
     // things drawn inside the email stay readable at any scale
     Array.prototype.forEach.call(doc.querySelectorAll("[data-nl-tag]"), function(t){
       t.style.cssText = "font:700 " + (11 / scale) + "px Inter,Arial,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#073b70;background:#eaf1f8;padding:" + (5 / scale) + "px " + (10 / scale) + "px;margin:0 0 " + (8 / scale) + "px;display:block;";
     });
-    Array.prototype.forEach.call(doc.querySelectorAll("[data-nl-new]"), function(n){ n.style.boxShadow = "inset " + (4 / scale) + "px 0 0 #073b70"; n.style.paddingLeft = (10 / scale) + "px"; n.style.marginLeft = (-10 / scale) + "px"; });
+    Array.prototype.forEach.call(doc.querySelectorAll("[data-nl-new]"), function(n){ n.style.boxShadow = "-" + (5 / scale) + "px 0 0 0 #073b70"; });
     var boxW = box.clientWidth;
     live.forEach(function(o){
       var r = o.sp.getBoundingClientRect(), w = r.width * scale, l = r.left * scale;
@@ -475,7 +482,7 @@
     if(c.raf) return;
     c.raf = requestAnimationFrame(function(){ c.raf = 0; var f = c.want; c.want = false; if(ctx === c) reflow(f); });
   }
-  function showEmail(html, parsed, restoreY){
+  function showEmail(html, decor, restoreY){
     var old = ctx && ctx.box ? ctx.box.offsetHeight : 0;
     var frame = document.createElement("iframe");
     frame.setAttribute("sandbox", "allow-same-origin allow-popups allow-popups-to-escape-sandbox");
@@ -484,7 +491,7 @@
     var box = document.createElement("div"); box.className = "draft";
     if(old) box.style.minHeight = old + "px";
     var overlay = mk("div", "nl-rows");
-    var c = ctx = { frame: frame, box: box, overlay: overlay, doc: null, scale: null, spacers: {}, keys: parsed.keys, queue: [], raf: 0, want: false, lastH: 0 };
+    var c = ctx = { frame: frame, box: box, overlay: overlay, doc: null, scale: null, spacers: {}, html: html, keys: parseKeys(html), decor: decor, raf: 0, want: false, lastH: 0 };
     rowEls = {};
     if(rowRO){ try { rowRO.disconnect(); } catch(e){} rowRO = null; }
     if(window.ResizeObserver) rowRO = new ResizeObserver(function(){ schedule(false); });
@@ -493,6 +500,7 @@
       try {
         var doc = c.doc = frame.contentDocument;
         Array.prototype.forEach.call(doc.querySelectorAll("a[href]"), function(a){ a.setAttribute("target", "_blank"); a.setAttribute("rel", "noopener"); });
+        if(decor) decorate(decor.k, decor.label);
         reflow(true);
         [100, 400, 1200, 2500].forEach(function(ms){ setTimeout(function(){ schedule(true); }, ms); });
         doc.addEventListener("load", function(){ schedule(true); }, true); // images
@@ -500,7 +508,6 @@
           var RO = frame.contentWindow.ResizeObserver;
           if(RO) new RO(function(){ if(ctx === c && c.doc && Math.abs(docHeight(c.doc) - c.lastH) > 1) schedule(false); }).observe(doc.documentElement);
         } catch(e){}
-        var q = c.queue; c.queue = []; q.forEach(function(fn){ try { fn(); } catch(e){} });
         schedule(false);
       } catch(e) {}
       if(restoreY){ window.scrollTo(0, restoreY); }
@@ -511,6 +518,16 @@
   }
   window.addEventListener("resize", function(){ schedule(true); });
 
+  // Which email to draw: a proposal being weighed, else (while the quote is not approved) the version that includes the quote, else the plain one.
+  function pickHtml(d){
+    if(activePreview){
+      var s = secOf(+activePreview.k.slice(1));
+      if(s && s.pending && String(s.pending.id) === String(activePreview.id)) return activePreview.html;
+      activePreview = null;
+    }
+    if(quote && quote.state === "pending" && quote.preview_html) return quote.preview_html;
+    return d.html;
+  }
   // The server's view of the issue: draw it, keeping what is open on the page (a note being typed, a proposal being weighed).
   function applyView(d, opts){
     opts = opts || {};
@@ -518,25 +535,14 @@
     view = d;
     sections = d.preview ? [] : (d.sections || []).slice().sort(function(a, b){ return a.index - b.index; });
     quote = !d.preview && d.quote ? d.quote : null;
-    var parsed = parseMarkers(d.html);
-    if(!ctx || !ctx.doc || ctx.keys.join("|") !== parsed.keys.join("|")){
-      showEmail(d.html, parsed, ctx ? window.pageYOffset : 0);
-      baseNode = parsed.nodes; baseStr = parsed.strs; dirty = {}; previewOf = {};
-    } else {
-      parsed.keys.forEach(function(k){
-        var s = k !== "q" ? secOf(+k.slice(1)) : null;
-        var keep = dirty[k] && s && s.pending && previewOf[k] != null && String(previewOf[k]) === String(s.pending.id);
-        if(!keep && (dirty[k] || parsed.strs[k] !== baseStr[k])){ setMarker(k, parsed.nodes[k]); dirty[k] = false; delete previewOf[k]; }
-        baseNode[k] = parsed.nodes[k]; baseStr[k] = parsed.strs[k];
-      });
+    if(opts.preview && opts.preview.k && opts.preview.html){
+      var ps = secOf(+opts.preview.k.slice(1));
+      if(ps && ps.pending) activePreview = { k: opts.preview.k, id: ps.pending.id, html: opts.preview.html, changed: opts.preview.changed !== false };
     }
-    if(opts.preview && opts.preview.k){
-      var pk = opts.preview.k, ps = secOf(+pk.slice(1)), pn = null;
-      try { pn = new DOMParser().parseFromString(opts.preview.html || "", "text/html").querySelector(selOf(pk)); } catch(e){}
-      if(pn && ps && ps.pending){
-        whenReady(function(){ setMarker(pk, pn, ps.pending.source === "owner" ? "Your words" : "New version"); dirty[pk] = true; previewOf[pk] = ps.pending.id; schedule(false); renderRow(pk); });
-      }
-    }
+    var html = pickHtml(d);
+    var decor = activePreview && activePreview.changed ? { k: activePreview.k, label: (secOf(+activePreview.k.slice(1)).pending.source === "owner") ? "Your words" : "New version" } : null;
+    var same = ctx && ctx.html === html && (ctx.decor ? ctx.decor.k + ctx.decor.label : "") === (decor ? decor.k + decor.label : "");
+    if(!same) showEmail(html, decor, ctx ? window.pageYOffset : 0);
     renderRows();
     paintBar(); paintHint();
     if(ctx && ctx.doc){
@@ -581,8 +587,8 @@
     var row = rowEls[k]; if(!row) return;
     var isQ = k === "q", s = isQ ? null : secOf(+k.slice(1)), u = uiOf(k);
     if(!isQ && !s) return;
-    var mode = modeOf(k), pend = s && s.pending, inPlace = !!(pend && previewOf[k] != null && String(previewOf[k]) === String(pend.id));
-    var sig = JSON.stringify([mode, u.edit, u.err, u.reload, u.saving, u.changed, s && s.signed_off, pend && pend.id, inPlace,
+    var mode = modeOf(k), pend = s && s.pending, inPlace = !!(pend && activePreview && activePreview.k === k && activePreview.changed && String(activePreview.id) === String(pend.id));
+    var sig = JSON.stringify([mode, u.edit, u.err, u.reload, u.saving, u.changed, s && s.signed_off, pend && pend.id, u.confirmId, inPlace, pend && (pend.findings || []).join("|"), activePreview && activePreview.changed, drawn(k),
       quote && quote.state, quote && quote.can_decide, isQ && quote && !ctx.keys.some(function(x){ return x === "q"; }) ? quote && quote.text : 0]);
     if(row._sig === sig) return;
     row._sig = sig;
@@ -612,7 +618,12 @@
   function buildIdle(k, row, s){
     var u = uiOf(k), t = secTitle(s.index);
     var line = mk("div", "nl-line");
-    if(s.signed_off){
+    if(!drawn(k)){
+      // nothing is written under this heading, so there is nothing to tick; it can still be changed
+      line.appendChild(mk("span", "nl-muted", "Nothing is written under \u201c" + t + "\u201d yet."));
+      var cb = btn("Change this", "", function(){ u.focus = true; setMode(k, "editing"); }, u.saving); cb.setAttribute("aria-label", "Change " + t);
+      line.appendChild(cb);
+    } else if(s.signed_off){
       var ck = mk("span", "nl-checked", "✓ Looks good"); ck.setAttribute("aria-label", "You said this part looks good");
       line.appendChild(ck);
       line.appendChild(btn("Change this", "", function(){ u.focus = true; setMode(k, "editing"); }, u.saving));
@@ -673,8 +684,16 @@
     } else {
       row.appendChild(mk("p", "nl-sub", "Use this and it replaces the part above.")); var card = mk("div", "nl-prop"); mdInto(pend.text, card); row.appendChild(card);
     }
+    if(activePreview && activePreview.k === k && String(activePreview.id) === String(pend.id) && !activePreview.changed) row.appendChild(mk("p", "nl-sub", "This came out the same as the original."));
+    var fnd = (pend.findings || []).filter(function(x){ return x; });
+    if(!fnd.length && u.confirmId != null && String(u.confirmId) === String(pend.id)) fnd.push("The writer flagged something in this version.");
+    if(fnd.length){
+      var fb = mk("div", "nl-find"); fb.appendChild(mk("p", "nl-findh", "Check before using:"));
+      fnd.forEach(function(x){ fb.appendChild(mk("p", "nl-findi", String(x))); });
+      row.appendChild(fb);
+    }
     var acts = mk("div", "nl-line");
-    acts.appendChild(btn(u.saving ? "Saving…" : "Use this", "primary grow", function(){ resolve(k, "section_accept"); }, u.saving));
+    acts.appendChild(btn(u.saving ? "Saving…" : (u.confirmId != null && String(u.confirmId) === String(pend.id) ? "Use it anyway" : "Use this"), "primary grow", function(){ resolve(k, "section_accept"); }, u.saving));
     acts.appendChild(btn("Keep the original", "grow", function(){ resolve(k, "section_discard"); }, u.saving));
     row.appendChild(acts);
     row.appendChild(btn("Change again", "link", function(){ u.edit = "note"; u.focus = true; setMode(k, "editing"); }, u.saving));
@@ -709,7 +728,9 @@
   function failed(k, res, back){
     var u = uiOf(k), d = res.d || {};
     u.mode = back || null; u.saving = false;
-    u.err = errText(res); u.reload = d.error === "not_current";
+    u.err = errText(res); u.reload = d.error === "not_current" || d.error === "content_moved";
+    if(d.error === "quote_changed" && d.view) applyView(d.view, { stable: k });
+    if(u.reload && d.view){ applyView(d.view); u.reload = false; u.err = "This changed while you were looking. The page now shows the latest, so please check it and try again."; }
     if(d.error === "already_sending" || d.error === "revision_in_progress" || d.error === "client_timeout" || d.error === "network") reload().catch(function(){});
     renderRow(k); schedule(false); paintBar();
   }
@@ -726,17 +747,26 @@
       if(res.d.ok) done(k, res); else failed(k, res, null);
     });
   }
+  function row_refresh(k){ if(rowEls[k]) rowEls[k]._sig = ""; renderRow(k); reveal(k); paintBar(); }
   function resolve(k, action){
     var s = secOf(+k.slice(1)), u = uiOf(k); if(!s || !s.pending || u.saving) return;
     u.saving = true; u.err = ""; renderRow(k);
-    api({ action: action, proposal_id: s.pending.id }, 30000).then(function(res){
-      if(res.d.ok) done(k, res); else failed(k, res, null);
+    var body = { action: action, proposal_id: s.pending.id };
+    if(action === "section_accept" && u.confirmId != null && String(u.confirmId) === String(s.pending.id)) body.confirm_findings = true;
+    api(body, 30000).then(function(res){
+      if(res.d.ok){ u.confirmId = null; done(k, res); }
+      else if(res.d.error === "needs_confirm"){
+        // the writer's version has a finding: show it and ask again
+        u.saving = false; u.err = ""; u.confirmId = s.pending.id;
+        if(res.d.view) applyView(res.d.view, { stable: k });
+        row_refresh(k);
+      } else failed(k, res, null);
     });
   }
   function quoteDo(action){
     var u = uiOf("q"); if(u.saving) return;
     u.saving = true; u.err = ""; renderRow("q");
-    api({ action: action }, 30000).then(function(res){
+    api({ action: action, quote_text: quote ? quote.text : "" }, 30000).then(function(res){
       if(res.d.ok){ u.changed = false; done("q", res); } else failed("q", res, null);
     });
   }
@@ -745,7 +775,7 @@
     var u = uiOf(k), isQ = k === "q", own = u.edit === "own";
     var text = String((own ? u.own : u.note) || "").trim(); if(!text) return;
     var s = isQ ? null : secOf(+k.slice(1)), body;
-    if(isQ) body = own ? { action: "quote_own_words", text: text } : { action: "quote_rewrite", note: text };
+    if(isQ) body = own ? { action: "quote_own_words", text: text, quote_text: quote ? quote.text : "" } : { action: "quote_rewrite", note: text, quote_text: quote ? quote.text : "" };
     else body = own ? { action: "section_own_words", section_index: s.index, section_hash: s.hash, text: text } : { action: "section_rewrite", section_index: s.index, section_hash: s.hash, note: text };
     u.mode = "busy"; u.err = ""; u.reload = false; u.busyOwn = own; u.start = Date.now();
     setBusyDim(k, true); renderRow(k); reveal(k); paintBar();
@@ -754,7 +784,7 @@
       var d = res.d || {};
       if(d.ok){
         u.mode = null; u.saving = false; u.err = ""; u.edit = "note"; u.note = ""; u.own = null; u.changed = isQ;
-        if(d.view) applyView(d.view, { stable: k, preview: !isQ && d.preview_html ? { k: k, html: d.preview_html } : null });
+        if(d.view) applyView(d.view, { stable: k, preview: !isQ && d.preview_html ? { k: k, html: d.preview_html, changed: d.text_changed !== false } : null });
         else reload().catch(function(){});
         renderRow(k); reveal(k); paintBar();
       } else failed(k, res, "editing");
@@ -781,8 +811,9 @@
     }
     var count = "";
     if(canEdit() && sections.length){
-      var n = sections.filter(function(s){ return s.signed_off; }).length;
-      count = n + " of " + sections.length + (sections.length === 1 ? " section" : " sections") + " checked";
+      var tk = sections.filter(function(s){ return drawn(skey(s.index)); });
+      var n = tk.filter(function(s){ return s.signed_off; }).length;
+      if(tk.length) count = n + " of " + tk.length + (tk.length === 1 ? " section" : " sections") + " checked";
     }
     var msgs = [];
     if(barError) msgs.push(barError);
